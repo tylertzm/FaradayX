@@ -30,6 +30,18 @@ def train_estimator():
     X = df[FEATURE_COLS].fillna(0)
     y = df[TARGET]
 
+    # When preparing features for training or prediction, include input_token_length and output_token_length
+    # For example, if using pandas DataFrame:
+    # features = pd.DataFrame([...])
+    # Add these columns if not already present
+    if 'input_token_length' not in X.columns and 'sequence_length' in X.columns:
+        X['input_token_length'] = X['sequence_length']
+    if 'output_token_length' not in X.columns and 'output_token_count' in X.columns:
+        X['output_token_length'] = X['output_token_count']
+    # If output_token_count is not available, fallback to sequence_length
+    elif 'output_token_length' not in X.columns and 'sequence_length' in X.columns:
+        X['output_token_length'] = X['sequence_length']
+
     # Split train/test sets
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42

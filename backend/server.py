@@ -89,7 +89,7 @@ def predict():
     # Calculate actual cost if we have energy and price
     actual_cost_eur = None
     if energy_used is not None and auction_price is not None:
-        # Convert Wh to kWh and multiply by EUR/MWh/1000
+        # Convert Wh to kWh and multiply to get cost in EUR
         actual_cost_eur = (energy_used / 1000) * (auction_price / 1000)
         # Convert to cents
         actual_cost_cents = actual_cost_eur * 100
@@ -108,8 +108,22 @@ def predict():
             sys.executable, os.path.join(os.path.dirname(__file__), 'extract_model_features.py'), model_name, input_text
         ])
         model_info = json.loads(model_result.decode()) if model_result else {}
+        # Guarantee input_token_length and output_token_length are present and integers
+        if not isinstance(model_info.get("input_token_length"), int):
+            model_info["input_token_length"] = int(model_info.get("input_token_length", 0) or 0)
+        if not isinstance(model_info.get("output_token_length"), int):
+            model_info["output_token_length"] = int(model_info.get("output_token_length", 0) or 0)
     except Exception:
-        model_info = {}
+        model_info = {"input_token_length": 0, "output_token_length": 0}
+
+    # Extract input/output token lengths from the app.py stdout if present
+    input_token_length = extract(r"Input token length: (\d+)", stdout, cast=int, default=None)
+    output_token_length = extract(r"Output token length: (\d+)", stdout, cast=int, default=None)
+    # If found, override/add to model_info
+    if input_token_length is not None:
+        model_info["input_token_length"] = input_token_length
+    if output_token_length is not None:
+        model_info["output_token_length"] = output_token_length
 
     price_history, price_future = [], []
     try:
@@ -170,6 +184,11 @@ def model_info():
             sys.executable, os.path.join(os.path.dirname(__file__), 'extract_model_features.py'), model_name, input_text
         ])
         features = json.loads(result.decode()) if result else {}
+        # Guarantee input_token_length and output_token_length are present and integers
+        if not isinstance(features.get("input_token_length"), int):
+            features["input_token_length"] = int(features.get("input_token_length", 0) or 0)
+        if not isinstance(features.get("output_token_length"), int):
+            features["output_token_length"] = int(features.get("output_token_length", 0) or 0)
         print("[MODEL FEATURES API CALL]", json.dumps(features, indent=2), flush=True)
         return jsonify(features)
     except Exception as e:

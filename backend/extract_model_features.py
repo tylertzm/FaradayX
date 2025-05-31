@@ -54,24 +54,45 @@ if __name__ == "__main__":
     with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
         model_name = sys.argv[1] if len(sys.argv) > 1 else "Qwen/Qwen3-0.6B"
         input_text = sys.argv[2] if len(sys.argv) > 2 else "Hello, this is a test."
-        model = AutoModelForCausalLM.from_pretrained(model_name)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        inputs = tokenizer(input_text, return_tensors="pt")
-        example_input = inputs["input_ids"]
-        features = extract_model_features(model, example_input)
-        # Add extra fields for frontend compatibility
-        features["model"] = model_name
-        features["model_architecture"] = type(model).__name__
-        features["batch_size"] = int(example_input.shape[0]) if hasattr(example_input, 'shape') else 1
-        features["sequence_length"] = int(example_input.shape[1]) if hasattr(example_input, 'shape') and len(example_input.shape) > 1 else 0
-        features["input_text"] = input_text
-        features["input_size"] = features["sequence_length"]
-        features["tokens"] = features["sequence_length"]
+        features = {}
+        try:
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            inputs = tokenizer(input_text, return_tensors="pt")
+            example_input = inputs["input_ids"]
+            features = extract_model_features(model, example_input)
+            # Add extra fields for frontend compatibility
+            features["model"] = model_name
+            features["model_architecture"] = type(model).__name__
+            features["batch_size"] = int(example_input.shape[0]) if hasattr(example_input, 'shape') else 1
+            features["sequence_length"] = int(example_input.shape[1]) if hasattr(example_input, 'shape') and len(example_input.shape) > 1 else 0
+            features["input_text"] = input_text
+            features["input_size"] = features["sequence_length"]
+            features["tokens"] = features["sequence_length"]
+            features["input_token_length"] = features["sequence_length"]  # should be an int
+            try:
+                output_ids = model.generate(example_input)
+                output_token_length = output_ids.shape[1] if len(output_ids.shape) > 1 else 0
+            except Exception:
+                output_token_length = 0
+            features["output_token_length"] = int(output_token_length)
+        except Exception as e:
+            # On error, still emit required fields for frontend
+            features.setdefault("model", model_name if 'model_name' in locals() else None)
+            features.setdefault("model_architecture", None)
+            features.setdefault("batch_size", 1)
+            features.setdefault("sequence_length", 0)
+            features.setdefault("input_text", input_text if 'input_text' in locals() else None)
+            features.setdefault("input_size", 0)
+            features.setdefault("tokens", 0)
+            features.setdefault("input_token_length", 0)
+            features.setdefault("output_token_length", 0)
+            features["error"] = str(e)
         # Add default values for metrics not available in feature extraction
-        features["inference_time"] = None
-        features["output_generation_time"] = None
-        features["output_token_count"] = None
-        features["avg_cpu_power"] = None
-        features["avg_gpu_power"] = None
-        features["peak_power"] = None
+        features.setdefault("inference_time", None)
+        features.setdefault("output_generation_time", None)
+        features.setdefault("output_token_count", None)
+        features.setdefault("avg_cpu_power", None)
+        features.setdefault("avg_gpu_power", None)
+        features.setdefault("peak_power", None)
         print(json.dumps(features))

@@ -151,5 +151,9 @@ def main():
     # Optionally: print power estimate if available
     # (Extend here if you train a power estimator)
 
+    # After printing extracted features, also print input/output token lengths in a way that the Flask API can parse from stdout
+    print(f"Input token length: {features.get('input_token_length', 0)}")
+    print(f"Output token length: {features.get('output_token_length', 0)}")
+
 if __name__ == "__main__":
     main()
