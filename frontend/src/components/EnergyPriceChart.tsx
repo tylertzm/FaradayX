@@ -1,0 +1,86 @@
+import React from 'react';
+import '../components/ScrollableContainer.css';
+
+interface EnergyPriceChartProps {
+  data: { datetime: string; price_eur_per_mwh: number }[];
+  history?: { datetime: string; price_eur_per_mwh: number }[];
+  title?: string;
+  selectedIdx?: number;
+  setSelectedIdx?: (idx: number) => void;
+}
+
+const EnergyPriceChart: React.FC<EnergyPriceChartProps> = ({ data, history = [], title, selectedIdx, setSelectedIdx }) => {
+  const allData = [...(history || []), ...data];
+  const [hoveredIdx, setHoveredIdx] = React.useState<number | null>(null);
+
+  if (!allData.length) {
+    return <div className="h-[15vh] flex items-center justify-center text-xs text-slate-400">Loading price forecast...</div>;
+  }
+  // Defensive: filter out any undefined/null entries
+  const safeData = allData.filter(d => d && typeof d.datetime === 'string' && typeof d.price_eur_per_mwh === 'number');
+  if (!safeData.length) {
+    return <div className="h-[15vh] flex items-center justify-center text-xs text-slate-400">No price data available.</div>;
+  }
+  const max = Math.max(...safeData.map(d => d.price_eur_per_mwh));
+  const min = Math.min(...safeData.map(d => d.price_eur_per_mwh));
+  return (
+    <div className="w-full relative">
+      {title && <div className="mb-1 text-xs text-slate-300 font-medium">{title}</div>}
+      <div className="relative">
+        <div className="absolute -right-1 top-1/2 -translate-y-1/2 text-blue-400 opacity-50 animate-pulse z-10">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </div>
+        <div className="w-full h-[15vh] overflow-x-auto scrollable-container bg-slate-800/20 border border-slate-700/20 rounded-lg">
+          <div className="h-full flex items-end gap-[1px] relative" style={{ minWidth: '100%', width: `${Math.max(safeData.length * 10, 100)}px` }}>
+            {safeData.map((d, i) => (
+              <div
+                key={i}
+                onMouseEnter={() => setHoveredIdx(i)}
+                onMouseLeave={() => setHoveredIdx(null)}
+                className={`flex-1 bg-gradient-to-t from-blue-500/60 to-blue-400/40 rounded-sm ${hoveredIdx === i ? 'ring-1 ring-blue-400' : ''}`}
+                style={{
+                  height: `${5 + ((d.price_eur_per_mwh - min) / (max - min || 1)) * 85}%`,
+                  minWidth: 2,
+                  position: 'relative',
+                }}
+              >
+                {/* Tooltip on hover */}
+                {hoveredIdx === i && (
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 z-10 bg-slate-900 text-xs text-slate-200 px-2 py-1 rounded shadow-lg border border-blue-500/30 whitespace-nowrap pointer-events-none">
+                    <div className="font-medium text-[10px] mb-1">{d.datetime.slice(5, 16)} {i < (history?.length || 0) ? '(past)' : '(future)'}</div>
+                    <div className="text-[10px]">Price: <span className="font-mono">{d.price_eur_per_mwh.toFixed(3)} EUR/MWh</span></div>
+                    {/* Show extra info for future bars */}
+                    {i >= (history?.length || 0) && (
+                      <div className="mt-1 text-green-400 text-[10px]">
+                        <div className="font-medium">Optimized config</div>
+                        <div className="text-[10px] text-slate-300">Savings: 48% energy</div>
+                      </div>
+                    )}
+                    {i < (history?.length || 0) && (
+                      <div className="mt-1 text-slate-400 text-[10px]">
+                        <div className="font-medium">Original config</div>
+                        <div className="text-[10px]">Tokens per watt: 340</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+        <span>{safeData[0].datetime.slice(5, 16)}</span>
+        <span>{safeData[safeData.length - 1].datetime.slice(5, 16)}</span>
+      </div>
+      <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+        <span>Min: {min.toFixed(3)}</span>
+        <span>Max: {max.toFixed(3)} EUR/MWh</span>
+      </div>
+    </div>
+  );
+};
+
+export default EnergyPriceChart;

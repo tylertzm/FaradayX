@@ -1,6 +1,7 @@
 import platform
 import subprocess
 import re
+import json
 
 def get_sysctl_value(key):
     try:
@@ -44,4 +45,4 @@ def extract_hardware_features():
     return features
 
 if __name__ == "__main__":
-    print(extract_hardware_features())
+    print(json.dumps(extract_hardware_features()))

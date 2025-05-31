@@ -38,17 +38,40 @@ def extract_model_features(model, example_input):
     return features
 
 if __name__ == "__main__":
+    import sys
     import json
     from transformers import AutoModelForCausalLM, AutoTokenizer
     import torch
-    # Load Qwen 0.6B model and tokenizer
-    model_name = "Qwen/Qwen3-0.6B"
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    # Prepare example input (batch of 1, 16 tokens)
-    input_text = "Hello, this is a test."
-    inputs = tokenizer(input_text, return_tensors="pt")
-    example_input = inputs["input_ids"]
-    # Extract features
-    features = extract_model_features(model, example_input)
-    print(json.dumps(features, indent=2))
+    import warnings
+    import logging
+    import contextlib
+    import io
+    # Suppress all warnings and info logs for clean JSON output
+    logging.getLogger().setLevel(logging.ERROR)
+    warnings.filterwarnings("ignore")
+    # Silence stdout/stderr from thop/torch
+    f = io.StringIO()
+    with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+        model_name = sys.argv[1] if len(sys.argv) > 1 else "Qwen/Qwen3-0.6B"
+        input_text = sys.argv[2] if len(sys.argv) > 2 else "Hello, this is a test."
+        model = AutoModelForCausalLM.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        inputs = tokenizer(input_text, return_tensors="pt")
+        example_input = inputs["input_ids"]
+        features = extract_model_features(model, example_input)
+        # Add extra fields for frontend compatibility
+        features["model"] = model_name
+        features["model_architecture"] = type(model).__name__
+        features["batch_size"] = int(example_input.shape[0]) if hasattr(example_input, 'shape') else 1
+        features["sequence_length"] = int(example_input.shape[1]) if hasattr(example_input, 'shape') and len(example_input.shape) > 1 else 0
+        features["input_text"] = input_text
+        features["input_size"] = features["sequence_length"]
+        features["tokens"] = features["sequence_length"]
+        # Add default values for metrics not available in feature extraction
+        features["inference_time"] = None
+        features["output_generation_time"] = None
+        features["output_token_count"] = None
+        features["avg_cpu_power"] = None
+        features["avg_gpu_power"] = None
+        features["peak_power"] = None
+        print(json.dumps(features))

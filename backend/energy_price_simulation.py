@@ -56,4 +56,3 @@ ax2.grid(True)
 
 fig.autofmt_xdate()
 plt.tight_layout()
-plt.show()

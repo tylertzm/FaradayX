@@ -12,6 +12,9 @@ import subprocess
 from extract_model_features import extract_model_features
 from extract_hardware_features import extract_hardware_features
 
+# Set the TOKENIZERS_PARALLELISM environment variable to prevent warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # Run energy price simulation to generate data.csv before anything else
 subprocess.run([sys.executable, 'energy_price_simulation.py'])
 
@@ -77,15 +80,39 @@ def main():
         print(f"\n[Heuristic] Predicted runtime (seconds): {y_pred:.4f}")
 
     # --- Cost Prediction Section ---
-    # Estimate average power (W). If you have a power estimator, use it. Otherwise, use a default or ask user.
+    # Estimate average power (W). Try to get from hardware features, then from CSV data, then default
     try:
-        avg_power = float(features.get("avg_cpu_power", 30))  # Try to get from features, else default 30W
+        # First try to get from hardware features
+        avg_power = float(features.get("avg_cpu_power", 0))
+        
+        # If not available, try to get average from benchmark data
+        if avg_power == 0:
+            try:
+                df = pd.read_csv("data/benchmarks.csv")
+                if not df.empty:
+                    # Get average CPU power from existing benchmarks
+                    avg_cpu_power = df["avg_cpu_power"].mean()
+                    avg_gpu_power = df["avg_gpu_power"].mean()
+                    avg_power = avg_cpu_power + avg_gpu_power  # Total average power
+                    print(f"Using benchmark average power: CPU={avg_cpu_power:.3f}W + GPU={avg_gpu_power:.3f}W = {avg_power:.3f}W")
+            except Exception as e:
+                print(f"[WARN] Could not load benchmark power data: {e}")
+                avg_power = 0
+        
+        # Final fallback to default
         if avg_power == 0:
             avg_power = 30
+            print(f"Using default power: {avg_power}W")
+            
     except Exception:
         avg_power = 30
+        print(f"Using fallback default power: {avg_power}W")
     # Energy used (kWh)
     energy_used_kwh = (y_pred * avg_power) / 3600  # seconds * W / 3600 = kWh
+    
+    # Print average power for server extraction
+    print(f"avg_power = {avg_power:.2f}")
+    
     # Load latest auction price from data.csv (EUR/MWh)
     import csv
     auction_price_eur_per_mwh = None
