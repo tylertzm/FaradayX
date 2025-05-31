@@ -96,9 +96,14 @@ const AIInferencePredictor = () => {
 
   // Function to calculate actual cost if needed
   const calculateActualCost = (energyUsed: number | null, auctionPrice: number | null): number | null => {
-    if (energyUsed === null || auctionPrice === null) return null;
-    // Convert Wh to kWh and multiply to get cost in cents
-    return Math.round((energyUsed / 1000) * (auctionPrice / 1000) * 100);
+    if (energyUsed === null || auctionPrice === null || energyUsed === undefined || auctionPrice === undefined) return null;
+    // Convert energy from Wh to kWh, then multiply by price per MWh, then convert to cents
+    // energyUsed is in Wh, auctionPrice is in EUR/MWh
+    const energyInKWh = energyUsed / 1000; // Convert Wh to kWh
+    const energyInMWh = energyInKWh / 1000; // Convert kWh to MWh
+    const costInEur = energyInMWh * auctionPrice; // Cost in EUR
+    const costInCents = costInEur * 100; // Convert EUR to cents
+    return Math.round(costInCents * 1000) / 1000; // Round to 3 decimal places
   };
 
   // Function to calculate accuracy values for different metrics
@@ -268,7 +273,7 @@ const AIInferencePredictor = () => {
   const [activeTab, setActiveTab] = useState('main'); // 'main', 'details', 'raw'
 
   return (
-    <div className="h-[100vh] overflow-hidden flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white">
+    <div className="h-[100vh] overflow-hidden flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white px-[1vw]">
       {/* Navigation Header */}
       <nav className="flex items-center justify-between px-3 h-[5vh] border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30">
         <div className="flex items-center gap-2">
@@ -308,13 +313,7 @@ const AIInferencePredictor = () => {
           >
             Hardware & Model
           </button>
-          <button
-            onClick={() => setActiveTab('raw')}
-            className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'raw' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
-          >
-            Raw Output
-          </button>
-          
+
           {/* Auto-refresh display removed - predictions now only run manually */}
         </div>
         
@@ -407,35 +406,29 @@ const AIInferencePredictor = () => {
                     <div className="h-[10vh]">
                       <BarChart height={72} bars={10} />
                     </div>
-                    <div className="text-lg font-light bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+                    <div className="text-xl font-light bg-gradient-to-r from-green-400 to-green-300 bg-clip-text text-transparent">
                       {formatNumber(response.costCents)}¢
                     </div>
-                    <div className="text-[10px] text-slate-400">per inference</div>
+                    <div className="text-[2vh] text-slate-400">per inference</div>
                   </div>
                 </div>
                 {/* Additional Metrics Row */}
-                <div className="grid grid-cols-5 gap-1 mt-2 pt-1 border-t border-slate-700/30 text-center">
-                  <div>
-                    <div className="text-[10px] text-slate-400">Actual Runtime</div>
-                    <div className="text-xs font-light">{formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</div>
+                <div className="grid grid-cols-4 gap-1 mt-2 pt-2 border-t border-slate-700/30 text-center h-[15vh]">
+                  <div className="flex flex-col justify-center">
+                    <div className="text-[2vh] text-slate-400">Actual Runtime</div>
+                    <div className="text-[3vh] font-light">{formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</div>
                   </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400">Error</div>
-                    <div className={`text-xs font-light ${response.error !== null && response.error < 20 ? 'text-green-400' : 'text-yellow-400'}`}>{formatNumber(response.error)}%</div>
+                  <div className="flex flex-col justify-center">
+                    <div className="text-[2vh] text-slate-400">Error</div>
+                    <div className={`text-[3vh] font-light ${response.error !== null && response.error < 20 ? 'text-green-400' : 'text-yellow-400'}`}>{formatNumber(response.error)}%</div>
                   </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400">Power</div>
-                    <div className="text-xs font-light">{formatNumber(response.predictedPower || extractPredictedPower(response.raw))}W</div>
+                  <div className="flex flex-col justify-center">
+                    <div className="text-[2vh] text-slate-400">Power</div>
+                    <div className="text-[3vh] font-light">{formatNumber(response.predictedPower || extractPredictedPower(response.raw))}W</div>
                   </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400">Auction Price</div>
-                    <div className="text-xs font-light">{formatNumber(response.auctionPrice)} EUR/MWh</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400">Actual Cost</div>
-                    <div className="text-xs font-light">
-                      {formatNumber(response.actualCostCents || calculateActualCost(response.energyUsed, response.auctionPrice))}¢
-                    </div>
+                  <div className="flex flex-col justify-center">
+                    <div className="text-[2vh] text-slate-400">Auction Price</div>
+                    <div className="text-[3vh] font-light">{formatNumber(response.auctionPrice)} EUR/MWh</div>
                   </div>
                 </div>
               </div>
@@ -533,16 +526,12 @@ const AIInferencePredictor = () => {
                 </div>
               </div>
 
-              {/* Model Details */}
-              <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
-                <h3 className="text-sm font-semibold mb-2">Model Details</h3>
-                <div className="overflow-x-auto h-[38vh] relative scrollable-data-table">
 
               {/* Model Features */}
               {response.raw.includes("Extracted Features:") && (
                 <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
                   <h4 className="text-sm font-semibold mb-2 text-purple-300">Model Features</h4>
-                  <div className="bg-slate-800/60 rounded-lg p-2 overflow-auto max-h-[18vh] scrollable-data-table">
+                  <div className="bg-slate-800/60 rounded-lg p-2 overflow-auto max-h-[50vh] scrollable-data-table">
                     <pre className="text-xs text-slate-300 whitespace-pre-wrap">{
                       response.raw
                         .split("Extracted Features:")[1]
@@ -553,61 +542,8 @@ const AIInferencePredictor = () => {
               )}
 
                 </div>
-              </div>
-            </div>
           )}
 
-          {activeTab === 'raw' && response && response.raw && (
-            <div className="grid grid-cols-1 gap-2">
-              {/* Prediction Results */}
-              <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
-                <h4 className="text-sm font-semibold mb-2 text-blue-300">Prediction Results</h4>
-                <div className="bg-slate-800/60 rounded-lg p-2">
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <div className="text-slate-400">Predicted Runtime</div>
-                      <div className="font-light">{formatNumber(response.predictedRuntime || extractPredictedRuntime(response.raw))}s</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Actual Runtime</div>
-                      <div className="font-light">{formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Prediction Error</div>
-                      <div className={`font-light ${response.error !== null && response.error < 20 ? 'text-green-400' : 'text-yellow-400'}`}>{formatNumber(response.error)}%</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Energy & Cost */}
-              <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
-                <h4 className="text-sm font-semibold mb-2 text-green-300">Energy & Cost Analysis</h4>
-                <div className="bg-slate-800/60 rounded-lg p-2">
-                  <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div>
-                      <div className="text-slate-400">Power Usage</div>
-                      <div className="font-light">{formatNumber(response.predictedPower || extractPredictedPower(response.raw))} W</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Energy Used</div>
-                      <div className="font-light">{formatNumber(response.energyUsed)} Wh</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Auction Price</div>
-                      <div className="font-light">{formatNumber(response.auctionPrice)} EUR/MWh</div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Inference Cost</div>
-                      <div className="font-light">{formatNumber(response.costCents)}¢</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-
-            </div>
-          )}
         </div>
       </div>
     </div>
