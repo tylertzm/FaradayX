@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, Cpu, Zap, DollarSign, Clock, Monitor, Settings, TrendingUp, MoreHorizontal } from 'lucide-react';
+import { Play, Cpu, Zap, DollarSign, Clock, Monitor, Settings, TrendingUp, MoreHorizontal, Calendar as CalendarIcon, Plus, Trash2, AlertCircle } from 'lucide-react';
 import EnergyPriceChart from '../components/EnergyPriceChart';
+import { Calendar } from '../components/ui/calendar';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
 
 interface HardwareInfo {
   cpu_frequency: number;
@@ -42,6 +47,21 @@ interface PredictionResponse {
   stderr?: string;
 }
 
+interface ScheduledJob {
+  id: string;
+  modelName: string;
+  inputText: string;
+  scheduledTime: Date;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  estimatedCost: number | null;
+  estimatedRuntime: number | null;
+  estimatedEnergy: number | null;
+  energyPrice: number | null;
+  result?: PredictionResponse;
+  createdAt: Date;
+  actualRuntime?: number;
+}
+
 const AIInferencePredictor = () => {
   const [modelName, setModelName] = useState('Qwen/Qwen3-0.6B');
   const [inputText, setInputText] = useState('What is a good alternative to John?');
@@ -49,6 +69,99 @@ const AIInferencePredictor = () => {
   const [response, setResponse] = useState<PredictionResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Scheduler state
+  const [scheduledJobs, setScheduledJobs] = useState<ScheduledJob[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>();
+  const [selectedTime, setSelectedTime] = useState('12:00');
+  const [scheduleModelName, setScheduleModelName] = useState('Qwen/Qwen3-0.6B');
+  const [scheduleInputText, setScheduleInputText] = useState('What is a good alternative to John?');
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [activeTab, setActiveTab] = useState('main'); // 'main', 'details', 'scheduler'
+  
+  // Real-time cost estimation state
+  const [currentEnergyPrice, setCurrentEnergyPrice] = useState<number>(85.2);
+  
+  // Real-time runtime tracking
+  const [isLoadingPrice, setIsLoadingPrice] = useState(false);
+  const [realTimeCostEstimate, setRealTimeCostEstimate] = useState<{
+    cost: number;
+    runtime: number;
+    energy: number;
+    price: number;
+  } | null>(null);
+
+  // Load scheduled jobs from backend on component mount
+  useEffect(() => {
+    loadScheduledJobs();
+  }, []);
+
+  // Auto-refresh jobs when on scheduler tab
+  useEffect(() => {
+    if (activeTab !== 'scheduler') return;
+    
+    const interval = setInterval(() => {
+      loadScheduledJobs();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [activeTab]);
+
+  // Fetch current energy price on component mount and scheduler tab activation
+  useEffect(() => {
+    getCurrentEnergyPrice();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'scheduler') {
+      getCurrentEnergyPrice();
+    }
+  }, [activeTab]);
+
+  // Update real-time cost estimate when selected date/time changes
+  useEffect(() => {
+    if (selectedDate && selectedTime) {
+      const [hours, minutes] = selectedTime.split(':').map(Number);
+      const scheduledDateTime = new Date(selectedDate);
+      scheduledDateTime.setHours(hours, minutes, 0, 0);
+      updateRealTimeCostEstimate(scheduledDateTime);
+    }
+  }, [selectedDate, selectedTime, response]);
+
+  // Periodic refresh of energy prices for live updates (every 5 minutes)
+  useEffect(() => {
+    if (activeTab !== 'scheduler') return;
+    
+    const interval = setInterval(() => {
+      getCurrentEnergyPrice();
+      // Also update real-time cost estimate if date/time is selected
+      if (selectedDate && selectedTime) {
+        const [hours, minutes] = selectedTime.split(':').map(Number);
+        const scheduledDateTime = new Date(selectedDate);
+        scheduledDateTime.setHours(hours, minutes, 0, 0);
+        updateRealTimeCostEstimate(scheduledDateTime);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    return () => clearInterval(interval);
+  }, [activeTab, selectedDate, selectedTime]);
+
+  const loadScheduledJobs = async () => {
+    try {
+      const response = await fetch('http://localhost:5001/api/scheduler/jobs');
+      if (response.ok) {
+        const jobs = await response.json();
+        const formattedJobs = jobs.map((job: any) => ({
+          ...job,
+          scheduledTime: new Date(job.scheduledTime),
+          createdAt: new Date(job.createdAt)
+        }));
+        setScheduledJobs(formattedJobs);
+      }
+    } catch (error) {
+      console.error('Failed to load scheduled jobs:', error);
+    }
+  };
 
 
   // Function to extract predicted runtime from raw text if it's null in the response
@@ -71,6 +184,242 @@ const AIInferencePredictor = () => {
     // Look for average power in the raw output
     const match = rawText.match(/avg_power = ([0-9.]+)/);
     return match ? parseFloat(match[1]) : null;
+  };
+
+  // Scheduler functions
+  const generateJobId = () => {
+    return `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  const getEnergyPriceForTime = async (scheduledTime: Date): Promise<number> => {
+    try {
+      const timestamp = scheduledTime.getTime();
+      const response = await fetch(`http://localhost:5001/api/scheduler/energy-price/${timestamp}`);
+      if (response.ok) {
+        const data = await response.json();
+        return data.price || 85.2; // Use consistent fallback
+      } else {
+        console.warn('Energy price API returned error:', response.status);
+      }
+    } catch (error) {
+      console.error('Failed to fetch energy price:', error);
+    }
+    return 85.2; // Use fixed fallback instead of random
+  };
+
+  // Function to get current energy price (for current time)
+  const getCurrentEnergyPrice = async (): Promise<number> => {
+    try {
+      setIsLoadingPrice(true);
+      const timestamp = Date.now();
+      const response = await fetch(`http://localhost:5001/api/scheduler/energy-price/${timestamp}`);
+      if (response.ok) {
+        const data = await response.json();
+        const price = data.price || 85.2;
+        setCurrentEnergyPrice(price);
+        return price;
+      } else {
+        console.warn('Current energy price API returned error:', response.status);
+        // Use fallback price but don't update state to avoid overriding cached value
+        return currentEnergyPrice;
+      }
+    } catch (error) {
+      console.error('Failed to fetch current energy price:', error);
+      // Use fallback price but don't update state to avoid overriding cached value
+      return currentEnergyPrice;
+    } finally {
+      setIsLoadingPrice(false);
+    }
+  };
+
+  // Function to update real-time cost estimation when date/time changes
+  const updateRealTimeCostEstimate = async (scheduledTime: Date) => {
+    try {
+      setIsLoadingPrice(true);
+      const energyPrice = await getEnergyPriceForTime(scheduledTime);
+      
+      // Use current prediction data if available, otherwise defaults
+      const estimatedRuntime = response?.predictedRuntime || 1.2; // seconds
+      const estimatedPower = response?.predictedPower || 25; // watts
+      const estimatedEnergy = (estimatedRuntime * estimatedPower) / 3600; // Wh
+      const estimatedCost = (estimatedEnergy * energyPrice) / 1000; // EUR
+      const estimatedCostCents = estimatedCost * 100; // cents
+      
+      setRealTimeCostEstimate({
+        cost: estimatedCostCents,
+        runtime: estimatedRuntime,
+        energy: estimatedEnergy,
+        price: energyPrice
+      });
+    } catch (error) {
+      console.error('Failed to update real-time cost estimate:', error);
+      // Set fallback estimate on error
+      setRealTimeCostEstimate({
+        cost: 2.3,
+        runtime: 1.2,
+        energy: 2.7,
+        price: 85.2
+      });
+    } finally {
+      setIsLoadingPrice(false);
+    }
+  };
+
+  const estimateJobCost = async (
+    modelName: string,
+    inputText: string,
+    scheduledTime: Date
+  ): Promise<{ 
+    estimatedCost: number;
+    estimatedRuntime: number;
+    estimatedEnergy: number;
+    energyPrice: number;
+  }> => {
+    // Get energy price for scheduled time
+    const energyPrice = await getEnergyPriceForTime(scheduledTime);
+    
+    // Estimate based on current prediction if available, otherwise use defaults
+    const estimatedRuntime = response?.predictedRuntime || 2.5; // seconds
+    const estimatedPower = response?.predictedPower || 30; // watts
+    const estimatedEnergy = (estimatedRuntime * estimatedPower) / 3600; // kWh
+    const estimatedCost = (estimatedEnergy * energyPrice) / 1000; // EUR
+    
+    return {
+      estimatedCost,
+      estimatedRuntime,
+      estimatedEnergy,
+      energyPrice
+    };
+  };
+
+  const scheduleJob = async () => {
+    if (!selectedDate || !scheduleModelName.trim() || !scheduleInputText.trim()) {
+      setErrorMsg('Please select a date, model name, and input text for scheduling.');
+      return;
+    }
+
+    setIsScheduling(true);
+    try {
+      const [hour, minute] = selectedTime.split(':').map(Number);
+      const scheduledTime = new Date(selectedDate);
+      scheduledTime.setHours(hour, minute, 0, 0);
+
+      // Check if scheduled time is in the future
+      if (scheduledTime <= new Date()) {
+        setErrorMsg('Scheduled time must be in the future.');
+        setIsScheduling(false);
+        return;
+      }
+
+      // Estimate job cost
+      const estimates = await estimateJobCost(scheduleModelName, scheduleInputText, scheduledTime);
+
+      // Send to backend
+      const backendResponse = await fetch('http://localhost:5001/api/scheduler/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modelName: scheduleModelName,
+          inputText: scheduleInputText,
+          scheduledTime: scheduledTime.toISOString(),
+          ...estimates
+        })
+      });
+
+      if (!backendResponse.ok) {
+        throw new Error('Failed to schedule job on backend');
+      }
+
+      const backendResult = await backendResponse.json();
+
+      const newJob: ScheduledJob = {
+        id: backendResult.id,
+        modelName: scheduleModelName,
+        inputText: scheduleInputText,
+        scheduledTime,
+        status: 'pending',
+        ...estimates,
+        createdAt: new Date()
+      };
+
+      setScheduledJobs(prev => [...prev, newJob].sort((a, b) => 
+        a.scheduledTime.getTime() - b.scheduledTime.getTime()
+      ));
+
+      // Reset form
+      setSelectedDate(undefined);
+      setSelectedTime('12:00');
+      setScheduleModelName('Qwen/Qwen3-0.6B');
+      setScheduleInputText('What is a good alternative to John?');
+      
+      setErrorMsg('');
+    } catch (error) {
+      setErrorMsg('Failed to schedule job: ' + (error as Error).message);
+    } finally {
+      setIsScheduling(false);
+    }
+  };
+
+  const deleteJob = async (jobId: string) => {
+    try {
+      const response = await fetch(`http://localhost:5001/api/scheduler/jobs/${jobId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        setScheduledJobs(prev => prev.filter(job => job.id !== jobId));
+      } else {
+        setErrorMsg('Failed to delete job');
+      }
+    } catch (error) {
+      setErrorMsg('Failed to delete job: ' + (error as Error).message);
+    }
+  };
+
+  const runJobNow = async (job: ScheduledJob) => {
+    // Update job status to running
+    setScheduledJobs(prev => prev.map(j => 
+      j.id === job.id ? { 
+        ...j, 
+        status: 'running'
+      } : j
+    ));
+
+    try {
+      const response = await fetch(`http://localhost:5001/api/scheduler/jobs/${job.id}/run`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to run job');
+      }
+      
+      const result = await response.json();
+      
+      // Store the actual runtime from the backend response
+      setScheduledJobs(prev => prev.map(j => 
+        j.id === job.id ? { 
+          ...j, 
+          actualRuntime: result.actualRuntime
+        } : j
+      ));
+      
+      // Update job with results and reload jobs to get updated status from backend
+      await loadScheduledJobs();
+      
+    } catch (error) {
+      console.error('Failed to run job:', error);
+      setErrorMsg(`Failed to run job: ${(error as Error).message}`);
+      
+      // Update job status to failed
+      setScheduledJobs(prev => prev.map(j => 
+        j.id === job.id ? { 
+          ...j, 
+          status: 'failed'
+        } : j
+      ));
+    }
   };
 
   // Function to extract actual power from raw text
@@ -97,7 +446,7 @@ const AIInferencePredictor = () => {
   // Function to calculate actual cost if needed
   const calculateActualCost = (energyUsed: number | null, auctionPrice: number | null): number | null => {
     if (energyUsed === null || auctionPrice === null || energyUsed === undefined || auctionPrice === undefined) return null;
-    // Convert energy from Wh to kWh, then multiply by price per MWh, then convert to cents
+    // Convert energy from Wh to kWh, then multiply to price per MWh, then convert to cents
     // energyUsed is in Wh, auctionPrice is in EUR/MWh
     const energyInKWh = energyUsed / 1000; // Convert Wh to kWh
     const energyInMWh = energyInKWh / 1000; // Convert kWh to MWh
@@ -270,8 +619,6 @@ const AIInferencePredictor = () => {
     }));
   };
 
-  const [activeTab, setActiveTab] = useState('main'); // 'main', 'details', 'raw'
-
   return (
     <div className="h-[100vh] overflow-hidden flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white px-[1vw]">
       {/* Navigation Header */}
@@ -312,50 +659,58 @@ const AIInferencePredictor = () => {
           >
             Hardware & Model
           </button>
+          <button
+            onClick={() => setActiveTab('scheduler')}
+            className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'scheduler' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
+          >
+            AI Scheduler
+          </button>
 
           {/* Auto-refresh display removed - predictions now only run manually */}
         </div>
         
         {/* Main Content Area */}
         <div className="h-[92vh] overflow-auto">
-          {/* Configuration Form */}
-          <div className="flex gap-1 mb-1.5 h-[8vh]">
-            <div className="flex-1 bg-slate-800/40 backdrop-blur-sm rounded-xl p-2 border border-slate-700/50 shadow-lg">
-              <div className="grid grid-cols-7 gap-1 items-center">
-                <div className="col-span-3">
-                  <input
-                    type="text"
-                    value={modelName}
-                    onChange={(e) => setModelName(e.target.value)}
-                    className="w-full px-2 py-1 text-xs bg-slate-700/50 border border-slate-600/50 rounded-lg"
-                    placeholder="e.g. Qwen/Qwen3-0.6B"
-                  />
-                </div>
-                <div className="col-span-3">
-                  <input
-                    type="text"
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    className="w-full px-2 py-1 text-xs bg-slate-700/50 border border-slate-600/50 rounded-lg"
-                    placeholder="Enter input text..."
-                  />
-                </div>
-                <div className="col-span-1">
-                  <button
-                    onClick={runPrediction}
-                    disabled={isLoading || !modelName.trim()}
-                    className="w-full px-2 py-1 text-xs bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-medium rounded-lg disabled:opacity-50 flex items-center justify-center"
-                  >
-                    {isLoading ? (
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                    ) : (
-                      <Play className="w-3 h-3" />
-                    )}
-                  </button>
+          {/* Configuration Form - Only show for Dashboard and Hardware & Model tabs */}
+          {(activeTab === 'main' || activeTab === 'details') && (
+            <div className="flex gap-1 mb-1.5 h-[8vh]">
+              <div className="flex-1 bg-slate-800/40 backdrop-blur-sm rounded-xl p-2 border border-slate-700/50 shadow-lg">
+                <div className="grid grid-cols-7 gap-1 items-center">
+                  <div className="col-span-3">
+                    <input
+                      type="text"
+                      value={modelName}
+                      onChange={(e) => setModelName(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-slate-700/50 border border-slate-600/50 rounded-lg"
+                      placeholder="e.g. Qwen/Qwen3-0.6B"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <input
+                      type="text"
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      className="w-full px-2 py-1 text-xs bg-slate-700/50 border border-slate-600/50 rounded-lg"
+                      placeholder="Enter input text..."
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    <button
+                      onClick={runPrediction}
+                      disabled={isLoading || !modelName.trim()}
+                      className="w-full px-2 py-1 text-xs bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-medium rounded-lg disabled:opacity-50 flex items-center justify-center"
+                    >
+                      {isLoading ? (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                      ) : (
+                        <Play className="w-3 h-3" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>          {/* Error Message */}
+          )}          {/* Error Message */}
           {errorMsg && (
             <div className="mb-2 p-2 bg-red-900/60 text-red-200 rounded-xl border border-red-700/40 text-xs">
               {errorMsg}
@@ -645,6 +1000,365 @@ const AIInferencePredictor = () => {
                 ) : null;
               })()}
 
+            </div>
+          )}
+
+          {/* AI Scheduler Tab */}
+          {activeTab === 'scheduler' && (
+            <div className="grid grid-cols-12 gap-2">
+              {/* Schedule New Job */}
+              <div className="col-span-5 bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-blue-400" />
+                  Schedule New Inference
+                </h3>
+                
+                {/* Model Configuration */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Model Name</label>
+                    <Input
+                      value={scheduleModelName}
+                      onChange={(e) => setScheduleModelName(e.target.value)}
+                      placeholder="e.g. Qwen/Qwen3-0.6B"
+                      className="h-8 text-xs bg-slate-700/50 border-slate-600/50"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Input Text</label>
+                    <textarea
+                      value={scheduleInputText}
+                      onChange={(e) => setScheduleInputText(e.target.value)}
+                      placeholder="Enter input text..."
+                      className="w-full h-16 px-3 py-2 text-xs bg-slate-700/50 border border-slate-600/50 rounded-lg resize-none"
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Time</label>
+                      <Input
+                        type="time"
+                        value={selectedTime}
+                        onChange={(e) => setSelectedTime(e.target.value)}
+                        className="h-8 text-xs bg-slate-700/50 border-slate-600/50"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button
+                        onClick={scheduleJob}
+                        disabled={isScheduling || !selectedDate}
+                        className="h-8 w-full text-xs bg-blue-600 hover:bg-blue-700"
+                      >
+                        {isScheduling ? (
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        ) : (
+                          <>
+                            <Plus className="w-3 h-3 mr-1" />
+                            Schedule
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Calendar */}
+              <div className="col-span-3 bg-slate-800/40 backdrop-blur-sm rounded-xl p-4 border border-slate-700/50 shadow-lg h-[45vh]">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-purple-400" />
+                  Select Date
+                </h3>
+                <div className="h-[36vh] overflow-hidden">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
+                    disabled={(date) => date < new Date()}
+                    className="rounded-md border-0 w-full h-full"
+                    classNames={{
+                      months: "flex flex-col w-full h-full",
+                      month: "w-full h-full flex flex-col",
+                      caption: "flex justify-center pt-2 pb-2 relative items-center",
+                      caption_label: "text-sm font-semibold text-white",
+                      nav: "space-x-1 flex items-center",
+                      nav_button: "h-8 w-8 bg-slate-700/50 hover:bg-slate-600/50 p-0 opacity-70 hover:opacity-100 text-sm rounded-md border border-slate-600/30 flex items-center justify-center",
+                      nav_button_previous: "absolute left-2",
+                      nav_button_next: "absolute right-2",
+                      table: "w-full border-collapse flex-1",
+                      head_row: "flex w-full mb-1",
+                      head_cell: "text-slate-400 rounded-md flex-1 font-medium text-sm text-center py-1",
+                      row: "flex w-full",
+                      cell: "flex-1 text-center text-sm p-0.5 relative",
+                      day: "h-8 w-full p-0 font-medium text-sm hover:bg-slate-700/50 rounded-md transition-colors flex items-center justify-center",
+                      day_selected: "bg-blue-600 text-white hover:bg-blue-600 font-semibold",
+                      day_today: "bg-slate-700/50 text-white font-semibold",
+                      day_outside: "text-slate-600 opacity-50",
+                      day_disabled: "text-slate-600 opacity-30 cursor-not-allowed",
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Cost Estimation */}
+              <div className="col-span-4 bg-slate-800/40 backdrop-blur-sm rounded-xl p-4 border border-slate-700/50 shadow-lg h-[45vh] overflow-hidden">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-green-400" />
+                  Cost Estimation
+                </h3>
+                
+                {selectedDate && (
+                  <div className="h-[36vh] overflow-y-auto pr-2 space-y-3">
+                    <div className="p-3 bg-slate-700/30 rounded-lg border border-slate-600/30">
+                      <div className="text-xs text-slate-400 mb-2 font-medium">Selected Date & Time</div>
+                      <div className="text-sm font-semibold text-white">
+                        {selectedDate.toLocaleDateString()} at {selectedTime}
+                      </div>
+                    </div>
+                    
+                    <div className="p-3 bg-slate-700/20 rounded-lg border border-slate-600/20">
+                      <div className="text-xs text-slate-400 mb-3 flex items-center gap-2 font-medium">
+                        Real-time Cost Breakdown
+                        {isLoadingPrice && (
+                          <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-2.5 bg-slate-700/40 rounded-lg text-center border border-slate-600/30">
+                          <div className="text-lg font-bold text-green-400">
+                            {realTimeCostEstimate ? `${realTimeCostEstimate.cost.toFixed(3)}¢` : '~2.3¢'}
+                          </div>
+                          <div className="text-xs text-slate-400 mt-1 font-medium">Est. Cost</div>
+                        </div>
+                        <div className="p-2.5 bg-slate-700/40 rounded-lg text-center border border-slate-600/30">
+                          <div className="text-lg font-bold text-blue-400">
+                            {realTimeCostEstimate ? `${realTimeCostEstimate.runtime.toFixed(1)}s` : '~1.2s'}
+                          </div>
+                          <div className="text-xs text-slate-400 mt-1 font-medium">Est. Runtime</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="p-2 bg-slate-700/20 rounded-lg border border-slate-600/20">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-400 font-medium">Current Energy Price</span>
+                          <span className="text-xs font-semibold text-green-400 flex items-center gap-1">
+                            {isLoadingPrice ? (
+                              <div className="w-2 h-2 border border-green-400 border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                              `${currentEnergyPrice.toFixed(1)} EUR/MWh`
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="p-2 bg-slate-700/20 rounded-lg border border-slate-600/20">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-400 font-medium">Est. Energy Usage</span>
+                          <span className="text-xs font-semibold text-amber-400">
+                            {realTimeCostEstimate ? `${realTimeCostEstimate.energy.toFixed(1)} Wh` : '2.7 Wh'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {realTimeCostEstimate && (
+                        <div className="p-2 bg-slate-700/20 rounded-lg border border-slate-600/20">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-slate-400 font-medium">Selected Time Price</span>
+                            <span className="text-xs font-semibold text-blue-400">
+                              {realTimeCostEstimate.price.toFixed(1)} EUR/MWh
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="text-xs text-slate-500 text-center bg-slate-700/20 p-2.5 rounded-lg border border-slate-600/20">
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        <span>💡</span>
+                        <span className="text-blue-400 font-medium">Optimal scheduling:</span>
+                      </div>
+                      <div className="text-slate-400 mb-2">Energy prices are typically lowest between 2-6 AM</div>
+                      {realTimeCostEstimate && realTimeCostEstimate.price < currentEnergyPrice && (
+                        <div className="text-green-400 font-medium text-xs">
+                          💚 Selected time has lower energy cost! ({((currentEnergyPrice - realTimeCostEstimate.price) / currentEnergyPrice * 100).toFixed(1)}% savings)
+                        </div>
+                      )}
+                      {realTimeCostEstimate && realTimeCostEstimate.price > currentEnergyPrice && (
+                        <div className="text-yellow-400 font-medium text-xs">
+                          ⚠️ Selected time has higher energy cost. Consider rescheduling.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {!selectedDate && (
+                  <div className="h-[36vh] flex items-center justify-center">
+                    <div className="text-center text-slate-500">
+                      <CalendarIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <div className="text-sm font-medium mb-1">Select a date to see cost estimates</div>
+                      <div className="text-xs">Choose a date and time for scheduling</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Scheduled Jobs List */}
+              <div className="col-span-12 bg-slate-800/40 backdrop-blur-sm rounded-xl p-4 border border-slate-700/50 shadow-lg h-[40vh] mt-2">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-purple-400" />
+                    Scheduled Jobs ({scheduledJobs.length})
+                  </h3>
+                  {scheduledJobs.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs font-medium">
+                        {scheduledJobs.filter(job => job.status === 'pending').length} pending
+                      </Badge>
+                      {scheduledJobs.filter(job => job.status === 'completed').length > 0 && (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs font-medium">
+                          {scheduledJobs.filter(job => job.status === 'completed').length} completed
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="h-[30vh] overflow-y-auto space-y-2 pr-2">
+                  {scheduledJobs.length === 0 ? (
+                    <div className="h-full flex items-center justify-center">
+                      <div className="text-center text-slate-500">
+                        <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                        <div className="text-base font-medium mb-1">No scheduled jobs</div>
+                        <div className="text-sm">Schedule your first AI inference above</div>
+                      </div>
+                    </div>
+                  ) : (
+                    scheduledJobs.map((job) => (
+                      <Card key={job.id} className="bg-slate-700/40 border-slate-600/40 hover:bg-slate-700/50 transition-colors">
+                        <CardContent className="p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              {/* Header with status and time */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge 
+                                  variant={
+                                    job.status === 'completed' ? 'default' :
+                                    job.status === 'running' ? 'secondary' :
+                                    job.status === 'failed' ? 'destructive' : 'outline'
+                                  }
+                                  className={`text-xs font-medium px-1.5 py-0.5 ${
+                                    job.status === 'completed' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                                    job.status === 'running' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                                    job.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30' : 
+                                    'bg-slate-500/20 text-slate-300 border-slate-500/30'
+                                  }`}
+                                >
+                                  {job.status}
+                                </Badge>
+                                <span className="text-xs text-slate-300 font-medium">
+                                  {job.scheduledTime.toLocaleDateString()} at {job.scheduledTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              
+                              {/* Model and input text */}
+                              <div className="mb-2">
+                                <div className="text-sm font-semibold text-white mb-1 truncate">{job.modelName}</div>
+                                <div className="text-xs text-slate-400 line-clamp-1 leading-relaxed">{job.inputText}</div>
+                              </div>
+                              
+                              {/* Metrics grid with consistent alignment */}
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-slate-600/30 rounded-md p-2 text-center">
+                                  <div className="text-xs text-slate-400 mb-0.5 font-medium">Cost</div>
+                                  <div className="text-xs font-semibold text-green-400">
+                                    {job.estimatedCost ? `${(job.estimatedCost * 100).toFixed(2)}¢` : 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="bg-slate-600/30 rounded-md p-2 text-center">
+                                  <div className="text-xs text-slate-400 mb-0.5 font-medium">
+                                    {job.status === 'completed' && job.actualRuntime ? 'Actual Runtime' : 'Runtime'}
+                                  </div>
+                                  <div className={`text-xs font-semibold ${
+                                    job.status === 'completed' && job.actualRuntime ? 'text-green-400' : 'text-blue-400'
+                                  }`}>
+                                    {job.status === 'completed' && job.actualRuntime ? 
+                                      `${job.actualRuntime.toFixed(1)}s` :
+                                     job.estimatedRuntime ? 
+                                      `${job.estimatedRuntime.toFixed(1)}s` : 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="bg-slate-600/30 rounded-md p-2 text-center">
+                                  <div className="text-xs text-slate-400 mb-0.5 font-medium">Energy</div>
+                                  <div className="text-xs font-semibold text-amber-400">
+                                    {job.estimatedEnergy ? `${(job.estimatedEnergy * 1000).toFixed(1)}Wh` : 'N/A'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Action buttons */}
+                            <div className="flex flex-col items-center gap-1.5 ml-3">
+                              <div className="h-7 flex items-center">
+                                {job.status === 'pending' && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => runJobNow(job)}
+                                    className="h-7 w-7 p-0 bg-green-600/20 hover:bg-green-600/40 border-green-500/30 text-green-400 hover:text-green-300"
+                                    title="Run now"
+                                  >
+                                    <Play className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                                {job.status === 'running' && (
+                                  <div className="h-7 w-7 flex items-center justify-center bg-blue-600/20 rounded-md border border-blue-500/30">
+                                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-blue-400"></div>
+                                  </div>
+                                )}
+                                {job.status === 'completed' && job.result && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      setResponse(job.result!);
+                                      setModelName(job.modelName);
+                                      setInputText(job.inputText);
+                                      setActiveTab('main');
+                                    }}
+                                    className="h-7 w-7 p-0 bg-blue-600/20 hover:bg-blue-600/40 border-blue-500/30 text-blue-400 hover:text-blue-300"
+                                    title="View results"
+                                  >
+                                    <TrendingUp className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => deleteJob(job.id)}
+                                className="h-7 w-7 p-0 bg-red-600/20 hover:bg-red-600/40 border-red-500/30 text-red-400 hover:text-red-300"
+                                title="Delete job"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                          
+                          {job.status === 'failed' && (
+                            <div className="mt-2 p-2 bg-red-900/30 border border-red-700/50 rounded-lg text-xs text-red-300">
+                              <AlertCircle className="w-3 h-3 inline mr-1" />
+                              Job failed to execute
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
