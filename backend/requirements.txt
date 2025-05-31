@@ -1,0 +1,28 @@
+# Core Python packages
+pandas>=1.5.0
+numpy>=1.21.0
+scikit-learn>=1.1.0
+joblib>=1.2.0
+
+# Machine Learning and AI
+torch>=2.0.0
+transformers>=4.30.0
+tokenizers>=0.13.0
+
+# Web framework
+flask>=2.3.0
+flask-cors>=4.0.0
+
+# System and utilities
+psutil>=5.9.0
+cpuinfo>=9.0.0
+requests>=2.28.0
+
+# Optional GPU support (uncomment if using CUDA)
+# torch-audio>=2.0.0
+# torchaudio>=2.0.0
+
+# Development and testing (optional)
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=6.0.0
