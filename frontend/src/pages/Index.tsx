@@ -498,23 +498,31 @@ const AIInferencePredictor = () => {
           )}
 
           {activeTab === 'details' && response && (
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-12 gap-2">
               {/* Hardware Details */}
-              <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
-                <h3 className="text-sm font-semibold mb-2">Hardware Details</h3>
+              <div className="col-span-6 bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
+                <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-blue-400" />
+                  Hardware Configuration
+                </h3>
                 <div className="overflow-x-auto h-[38vh] relative scrollable-data-table">
                   <table className="min-w-full text-xs text-left text-slate-300">
                     <thead className="sticky top-0 bg-slate-800 z-10">
                       <tr>
-                        <th className="px-2 py-1">Field</th>
-                        <th className="px-2 py-1">Value</th>
+                        <th className="px-2 py-1 font-medium">Field</th>
+                        <th className="px-2 py-1 font-medium">Value</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/30">
                       {response.hardware && Object.entries(response.hardware).map(([key, value]) => (
                         <tr key={key} className="hover:bg-slate-700/20">
-                          <td className="px-2 py-1 font-medium whitespace-nowrap">{key}</td>
-                          <td className="px-2 py-1 whitespace-pre-wrap break-all">{typeof value === 'object' ? JSON.stringify(value) : value?.toString()}</td>
+                          <td className="px-2 py-1 font-medium whitespace-nowrap text-slate-400">{key.replace(/_/g, ' ')}</td>
+                          <td className="px-2 py-1 whitespace-pre-wrap break-all">
+                            {typeof value === 'object' ? JSON.stringify(value) : 
+                             key === 'memory_bytes' ? `${(Number(value) / 1e9).toFixed(2)} GB` :
+                             key === 'cpu_frequency' ? `${(Number(value) / 1e9).toFixed(2)} GHz` :
+                             value?.toString()}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -522,22 +530,122 @@ const AIInferencePredictor = () => {
                 </div>
               </div>
 
-
               {/* Model Features */}
-              {response.raw.includes("Extracted Features:") && (
-                <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
-                  <h4 className="text-sm font-semibold mb-2 text-purple-300">Model Features</h4>
-                  <div className="bg-slate-800/60 rounded-lg p-2 overflow-auto max-h-[50vh] scrollable-data-table">
-                    <pre className="text-xs text-slate-300 whitespace-pre-wrap">{
-                      response.raw
-                        .split("Extracted Features:")[1]
-                        .split("}")[0] + "}"
-                    }</pre>
-                  </div>
-                </div>
-              )}
+              {(() => {
+                let modelFeatures = null;
+                if (response.raw && response.raw.includes("Extracted Features:")) {
+                  try {
+                    const extractedPart = response.raw.split("Extracted Features:")[1];
+                    const jsonMatch = extractedPart.match(/\{[\s\S]*?\n\}/);
+                    if (jsonMatch) {
+                      modelFeatures = JSON.parse(jsonMatch[0]);
+                    }
+                  } catch (e) {
+                    console.error('Error parsing model features:', e);
+                  }
+                }
 
-                </div>
+                // Filter out hardware-related fields that shouldn't be in model configuration
+                const hardwareFields = [
+                  'cpu_frequency', 'num_cores', 'memory_bytes', 'device', 'os', 'os_version', 
+                  'machine', 'gpu_available', 'architecture', 'platform', 'processor', 
+                  'cpu_model', 'ram', 'storage', 'gpu_model', 'gpu_memory', 'system_info',
+                  'hardware_id', 'device_type', 'compute_capability', 'driver_version'
+                ];
+                const modelOnlyFields = modelFeatures ? Object.fromEntries(
+                  Object.entries(modelFeatures).filter(([key]) => 
+                    !hardwareFields.includes(key) && key !== 'layer_types'
+                  )
+                ) : null;
+                
+                return modelOnlyFields && Object.keys(modelOnlyFields).length > 0 ? (
+                  <div className="col-span-6 bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <Settings className="w-4 h-4 text-purple-400" />
+                      Model Configuration
+                    </h4>
+                    <div className="overflow-x-auto h-[38vh] relative scrollable-data-table">
+                      <table className="min-w-full text-xs text-left text-slate-300">
+                        <thead className="sticky top-0 bg-slate-800 z-10">
+                          <tr>
+                            <th className="px-2 py-1 font-medium">Field</th>
+                            <th className="px-2 py-1 font-medium">Value</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700/30">
+                          {Object.entries(modelOnlyFields).map(([key, value]) => (
+                            <tr key={key} className="hover:bg-slate-700/20">
+                              <td className="px-2 py-1 font-medium whitespace-nowrap text-slate-400">{key.replace(/_/g, ' ')}</td>
+                              <td className="px-2 py-1 whitespace-pre-wrap break-all">
+                                {Array.isArray(value) ? `[${value.join(', ')}]` : 
+                                 key === 'num_params' ? Number(value).toLocaleString() :
+                                 key === 'flops' ? Number(value).toLocaleString() :
+                                 typeof value === 'object' ? JSON.stringify(value) : 
+                                 value?.toString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Layer Types Breakdown */}
+              {(() => {
+                let layerTypes = null;
+                if (response.raw && response.raw.includes("Extracted Features:")) {
+                  try {
+                    const extractedPart = response.raw.split("Extracted Features:")[1];
+                    const jsonMatch = extractedPart.match(/\{[\s\S]*?\n\}/);
+                    if (jsonMatch) {
+                      const modelFeatures = JSON.parse(jsonMatch[0]);
+                      layerTypes = modelFeatures.layer_types;
+                    }
+                  } catch (e) {
+                    console.error('Error parsing layer types:', e);
+                  }
+                }
+                
+                return layerTypes ? (
+                  <div className="col-span-12 bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh] mt-2">
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <Monitor className="w-4 h-4 text-green-400" />
+                      Layer Types Breakdown
+                      <span className="text-xs text-slate-500 ml-auto">{Object.keys(layerTypes).length} unique layer types</span>
+                    </h4>
+                    <div className="overflow-x-auto h-[38vh] relative scrollable-data-table">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                        {Object.entries(layerTypes)
+                          .sort(([,a], [,b]) => Number(b) - Number(a))
+                          .map(([layerType, count]) => {
+                            const countNum = Number(count);
+                            const allCounts = Object.values(layerTypes).map(c => Number(c));
+                            const totalLayers = allCounts.reduce((sum, num) => sum + num, 0);
+                            const percentage = totalLayers > 0 ? ((countNum / totalLayers) * 100).toFixed(1) : '0.0';
+                            
+                            return (
+                          <div key={layerType} className="bg-slate-700/30 rounded-lg p-3 border border-slate-600/20 hover:bg-slate-700/40 transition-colors">
+                            <div className="text-xs font-medium text-slate-300 mb-1 truncate" title={layerType}>
+                              {layerType}
+                            </div>
+                            <div className="text-lg font-bold text-white">
+                              {countNum.toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              {percentage}%
+                            </div>
+                          </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+            </div>
           )}
 
         </div>
