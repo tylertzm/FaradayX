@@ -1,0 +1,8 @@
+{
+  "mae": 0.014106174302101121,
+  "rmse": 0.022546746769874403,
+  "r2": 0.7468595268682123,
+  "correlation": 0.8757948461608989,
+  "plot": "results/evaluation_plots.png",
+  "model_used": "ML estimator"
+}
