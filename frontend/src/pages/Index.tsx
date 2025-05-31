@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Play, Cpu, Zap, DollarSign, Clock, Monitor, Settings, TrendingUp, MoreHorizontal, Calendar as CalendarIcon, Plus, Trash2, AlertCircle } from 'lucide-react';
 import EnergyPriceChart from '../components/EnergyPriceChart';
-<<<<<<< HEAD
 import { Calendar } from '../components/ui/calendar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-=======
 import CTOView from './CTOView';
 import CFOView from './CFOView';
->>>>>>> 9afa658 (for_bhanu)
 
 interface HardwareInfo {
   cpu_frequency: number;
@@ -451,11 +448,7 @@ const AIInferencePredictor = () => {
   // Function to calculate actual cost if needed
   const calculateActualCost = (energyUsed: number | null, auctionPrice: number | null): number | null => {
     if (energyUsed === null || auctionPrice === null || energyUsed === undefined || auctionPrice === undefined) return null;
-<<<<<<< HEAD
-    // Convert energy from Wh to kWh, then multiply to price per MWh, then convert to cents
-=======
     // Convert energy from Wh to kWh, then multiply to get cost in cents
->>>>>>> 9afa658 (for_bhanu)
     // energyUsed is in Wh, auctionPrice is in EUR/MWh
     const energyInKWh = energyUsed / 1000; // Convert Wh to kWh
     const energyInMWh = energyInKWh / 1000; // Convert kWh to MWh
@@ -628,37 +621,6 @@ const AIInferencePredictor = () => {
     }));
   };
 
-<<<<<<< HEAD
-=======
-  const [activeTab, setActiveTab] = useState('main'); // 'main', 'details', 'raw', 'cto', 'cfo'
-
-  // --- Helper: Aggregate summary for CTO (hardware/model health) ---
-  const getCTOSummary = () => {
-    if (!response) return null;
-    return (
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 shadow">
-          <h4 className="text-sm font-semibold mb-2 text-blue-300 flex items-center gap-1"><Cpu className="w-4 h-4" /> Hardware Utilization</h4>
-          <div className="text-xs text-slate-400 mb-1">Cores Used</div>
-          <div className="text-lg font-light">{formatNumber(response.hardware?.num_cores)} / 12</div>
-          <div className="text-xs text-slate-400 mb-1 mt-2">Memory</div>
-          <div className="text-lg font-light">{formatNumber(response.hardware?.memory_bytes / 1e9)} GB</div>
-          <div className="text-xs text-slate-400 mb-1 mt-2">GPU</div>
-          <div className="text-lg font-light">{response.hardware?.gpu_available ? 'Available' : 'Not Available'}</div>
-        </div>
-        <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 shadow">
-          <h4 className="text-sm font-semibold mb-2 text-purple-300 flex items-center gap-1"><TrendingUp className="w-4 h-4" /> Model Performance</h4>
-          <div className="text-xs text-slate-400 mb-1">Predicted Runtime</div>
-          <div className="text-lg font-light">{formatNumber(response.predictedRuntime || extractPredictedRuntime(response.raw))}s</div>
-          <div className="text-xs text-slate-400 mb-1 mt-2">Actual Runtime</div>
-          <div className="text-lg font-light">{formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</div>
-          <div className="text-xs text-slate-400 mb-1 mt-2">Error Rate</div>
-          <div className="text-lg font-light">{formatNumber(response.error)}%</div>
-        </div>
-      </div>
-    );
-  };
-
   // Function to extract input token length from model info or raw text
   const extractInputTokenLength = (model: ModelInfo, rawText: string | undefined): number | null => {
     if (model && typeof model.input_token_length === 'number') return model.input_token_length;
@@ -678,32 +640,6 @@ const AIInferencePredictor = () => {
     }
     return null;
   };
-
-  // --- Helper: Aggregate summary for CFO (cost/energy/price) ---
-  const getCFOSummary = () => {
-    if (!response) return null;
-    return (
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 shadow">
-          <h4 className="text-sm font-semibold mb-2 text-green-300 flex items-center gap-1"><DollarSign className="w-4 h-4" /> Cost Analytics</h4>
-          <div className="text-xs text-slate-400 mb-1">Cost per Inference</div>
-          <div className="text-lg font-light">{formatNumber(response.costCents)}¢</div>
-          <div className="text-xs text-slate-400 mb-1 mt-2">Energy Used</div>
-          <div className="text-lg font-light">{formatNumber(response.energyUsed)} Wh</div>
-        </div>
-        <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 shadow">
-          <h4 className="text-sm font-semibold mb-2 text-blue-300 flex items-center gap-1"><Zap className="w-4 h-4" /> Energy Price Trend</h4>
-          <div className="text-xs text-slate-400 mb-1">Current Price</div>
-          <div className="text-lg font-light">{response.priceFuture && response.priceFuture.length > 0 ? formatNumber(response.priceFuture[0].price_eur_per_mwh) : 'N/A'} €/MWh</div>
-          <div className="text-xs text-slate-400 mb-1 mt-2">Forecast (next hour)</div>
-          <div className="text-lg font-light">{response.priceFuture && response.priceFuture.length > 1 ? formatNumber(response.priceFuture[1].price_eur_per_mwh) : 'N/A'} €/MWh</div>
-        </div>
-      </div>
-    );
-  };
-
-  // --- Render ---
->>>>>>> 9afa658 (for_bhanu)
   return (
     <div className="h-[100vh] overflow-hidden flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white px-[1vw]">
       {/* Navigation Header */}
@@ -745,15 +681,12 @@ const AIInferencePredictor = () => {
             Hardware & Model
           </button>
           <button
-<<<<<<< HEAD
             onClick={() => setActiveTab('scheduler')}
             className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'scheduler' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
           >
             AI Scheduler
           </button>
-
-          {/* Auto-refresh display removed - predictions now only run manually */}
-=======
+          <button
             onClick={() => setActiveTab('cto')}
             className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'cto' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
           >
@@ -765,7 +698,6 @@ const AIInferencePredictor = () => {
           >
             CFO View
           </button>
->>>>>>> 9afa658 (for_bhanu)
         </div>
         
         {/* Main Content Area */}
