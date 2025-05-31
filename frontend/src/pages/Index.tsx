@@ -278,7 +278,6 @@ const AIInferencePredictor = () => {
       <nav className="flex items-center justify-between px-3 h-[5vh] border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
-            <Cpu className="w-3 h-3 text-white" />
           </div>
           <span className="text-sm font-semibold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
             FaradayX
@@ -413,23 +412,20 @@ const AIInferencePredictor = () => {
                   </div>
                 </div>
                 {/* Additional Metrics Row */}
-                <div className="grid grid-cols-4 gap-1 mt-2 pt-2 border-t border-slate-700/30 text-center h-[15vh]">
+                <div className="grid grid-cols-3 gap-1 mt-2 pt-2 border-t border-slate-700/30 text-center h-[15vh]">
                   <div className="flex flex-col justify-center">
                     <div className="text-[2vh] text-slate-400">Actual Runtime</div>
                     <div className="text-[3vh] font-light">{formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</div>
-                  </div>
-                  <div className="flex flex-col justify-center">
-                    <div className="text-[2vh] text-slate-400">Error</div>
-                    <div className={`text-[3vh] font-light ${response.error !== null && response.error < 20 ? 'text-green-400' : 'text-yellow-400'}`}>{formatNumber(response.error)}%</div>
                   </div>
                   <div className="flex flex-col justify-center">
                     <div className="text-[2vh] text-slate-400">Power</div>
                     <div className="text-[3vh] font-light">{formatNumber(response.predictedPower || extractPredictedPower(response.raw))}W</div>
                   </div>
                   <div className="flex flex-col justify-center">
-                    <div className="text-[2vh] text-slate-400">Auction Price</div>
-                    <div className="text-[3vh] font-light">{formatNumber(response.auctionPrice)} EUR/MWh</div>
+                    <div className="text-[2vh] text-slate-400">Error</div>
+                    <div className={`text-[3vh] font-light ${response.error !== null && response.error < 20 ? 'text-green-400' : 'text-yellow-400'}`}>{formatNumber(response.error)}%</div>
                   </div>
+
                 </div>
               </div>
 
