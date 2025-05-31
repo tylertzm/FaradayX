@@ -1,0 +1,34 @@
+/* Main page overrides for black & white transparent theme */
+.main-bg, .main-content, .dashboard-section, .details-section {
+  background: rgba(0,0,0,0.6) !important;
+  color: #fff !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #fff !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.section-title {
+  color: #fff !important;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 1.5rem;
+}
+
+.table, table {
+  background: transparent !important;
+  color: #fff !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+th, td {
+  border-radius: 0 !important;
+  background: transparent !important;
+}

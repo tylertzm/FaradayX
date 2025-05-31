@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Play, Cpu, Zap, DollarSign, Clock, Monitor, Settings, TrendingUp, MoreHorizontal, Calendar as CalendarIcon, Plus, Trash2, AlertCircle } from 'lucide-react';
 import EnergyPriceChart from '../components/EnergyPriceChart';
-<<<<<<< HEAD
 import { Calendar } from '../components/ui/calendar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-=======
 import CTOView from './CTOView';
 import CFOView from './CFOView';
->>>>>>> 9afa658 (for_bhanu)
+import HardwareDetails from '../components/HardwareDetails';
+import ModelFeatures from '../components/ModelFeatures';
+import LayerTypesBreakdown from '../components/LayerTypesBreakdown';
+import SchedulerForm from '../components/SchedulerForm';
+import SchedulerCalendar from '../components/SchedulerCalendar';
+import CostEstimation from '../components/CostEstimation';
 
 interface HardwareInfo {
   cpu_frequency: number;
@@ -67,6 +70,25 @@ interface ScheduledJob {
   actualRuntime?: number;
 }
 
+// Add types for pipeline info
+interface EvaluationReport {
+  mae?: number;
+  rmse?: number;
+  r2?: number;
+  [key: string]: number | string | undefined;
+}
+
+interface FeatureImportance {
+  [feature: string]: number;
+}
+
+interface PipelineInfo {
+  evaluation_report?: EvaluationReport;
+  feature_importance?: FeatureImportance;
+  logs: string[];
+  benchmarks?: string[][];
+}
+
 const AIInferencePredictor = () => {
   const [modelName, setModelName] = useState('Qwen/Qwen3-0.6B');
   const [inputText, setInputText] = useState('What is a good alternative to John?');
@@ -82,7 +104,7 @@ const AIInferencePredictor = () => {
   const [scheduleModelName, setScheduleModelName] = useState('Qwen/Qwen3-0.6B');
   const [scheduleInputText, setScheduleInputText] = useState('What is a good alternative to John?');
   const [isScheduling, setIsScheduling] = useState(false);
-  const [activeTab, setActiveTab] = useState('main'); // 'main', 'details', 'scheduler'
+  const [activeTab, setActiveTab] = useState('main'); // 'main', 'details', 'scheduler', 'pipeline'
   
   // Real-time cost estimation state
   const [currentEnergyPrice, setCurrentEnergyPrice] = useState<number>(85.2);
@@ -95,6 +117,11 @@ const AIInferencePredictor = () => {
     energy: number;
     price: number;
   } | null>(null);
+
+  // Pipeline info state
+  const [pipelineInfo, setPipelineInfo] = useState<PipelineInfo | null>(null);
+  const [pipelineLoading, setPipelineLoading] = useState(false);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
 
   // Load scheduled jobs from backend on component mount
   useEffect(() => {
@@ -112,16 +139,106 @@ const AIInferencePredictor = () => {
     return () => clearInterval(interval);
   }, [activeTab]);
 
+  // getEnergyPriceForTime (move this up)
+  const getEnergyPriceForTime = useCallback(async (scheduledTime: Date): Promise<number> => {
+    try {
+      const timestamp = scheduledTime.getTime();
+      const response = await fetch(`http://localhost:5001/api/scheduler/energy-price/${timestamp}`);
+      if (response.ok) {
+        const data = await response.json();
+        return data.price || 85.2; // Use consistent fallback
+      } else {
+        console.warn('Energy price API returned error:', response.status);
+      }
+    } catch (error) {
+      console.error('Failed to fetch energy price:', error);
+    }
+    return 85.2; // Use fixed fallback instead of random
+  }, []);
+
+  // getCurrentEnergyPrice (keep only one definition)
+  const getCurrentEnergyPrice = useCallback(async (): Promise<number> => {
+    try {
+      setIsLoadingPrice(true);
+      const timestamp = Date.now();
+      const response = await fetch(`http://localhost:5001/api/scheduler/energy-price/${timestamp}`);
+      if (response.ok) {
+        const data = await response.json();
+        const price = data.price || 85.2;
+        setCurrentEnergyPrice(price);
+        return price;
+      } else {
+        console.warn('Current energy price API returned error:', response.status);
+        return currentEnergyPrice;
+      }
+    } catch (error) {
+      console.error('Failed to fetch current energy price:', error);
+      return currentEnergyPrice;
+    } finally {
+      setIsLoadingPrice(false);
+    }
+  }, [currentEnergyPrice]);
+
+  // updateRealTimeCostEstimate (move above hooks)
+  const updateRealTimeCostEstimate = useCallback(async (scheduledTime: Date) => {
+    try {
+      setIsLoadingPrice(true);
+      // Use the current scheduler model/input for prediction
+      const predictRes = await fetch('http://localhost:5001/api/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modelName: scheduleModelName,
+          inputText: scheduleInputText
+        })
+      });
+      if (!predictRes.ok) throw new Error('Backend prediction failed');
+      const predictData = await predictRes.json();
+      const estimatedRuntime = predictData.predictedRuntime || 1.2;
+      const estimatedPower = predictData.predictedPower || 25;
+      // Find the price forecast for the scheduled time (match hour)
+      let energyPrice = 85.2;
+      if (predictData.priceFuture && predictData.priceFuture.length > 0) {
+        const schedHour = scheduledTime.getHours();
+        const match = predictData.priceFuture.find((p: { datetime: string; price_eur_per_mwh: number }) => {
+          const d = new Date(p.datetime);
+          return d.getHours() === schedHour;
+        });
+        if (match) energyPrice = match.price_eur_per_mwh;
+        else energyPrice = predictData.priceFuture[0].price_eur_per_mwh;
+      }
+      const estimatedEnergy = (estimatedRuntime * estimatedPower) / 3600;
+      const estimatedCost = (estimatedEnergy * energyPrice) / 1000;
+      const estimatedCostCents = estimatedCost * 100;
+      setRealTimeCostEstimate({
+        cost: estimatedCostCents,
+        runtime: estimatedRuntime,
+        energy: estimatedEnergy,
+        price: energyPrice
+      });
+    } catch (error) {
+      console.error('Failed to update real-time cost estimate:', error);
+      setRealTimeCostEstimate({
+        cost: 2.3,
+        runtime: 1.2,
+        energy: 2.7,
+        price: 85.2
+      });
+    } finally {
+      setIsLoadingPrice(false);
+    }
+  }, [scheduleModelName, scheduleInputText]);
+
   // Fetch current energy price on component mount and scheduler tab activation
   useEffect(() => {
     getCurrentEnergyPrice();
-  }, []);
+  }, [getCurrentEnergyPrice]);
 
   useEffect(() => {
     if (activeTab === 'scheduler') {
       getCurrentEnergyPrice();
     }
-  }, [activeTab]);
+  }, [activeTab, getCurrentEnergyPrice]);
 
   // Update real-time cost estimate when selected date/time changes
   useEffect(() => {
@@ -131,32 +248,29 @@ const AIInferencePredictor = () => {
       scheduledDateTime.setHours(hours, minutes, 0, 0);
       updateRealTimeCostEstimate(scheduledDateTime);
     }
-  }, [selectedDate, selectedTime, response]);
+  }, [selectedDate, selectedTime, response, updateRealTimeCostEstimate]);
 
   // Periodic refresh of energy prices for live updates (every 5 minutes)
   useEffect(() => {
     if (activeTab !== 'scheduler') return;
-    
     const interval = setInterval(() => {
       getCurrentEnergyPrice();
-      // Also update real-time cost estimate if date/time is selected
       if (selectedDate && selectedTime) {
         const [hours, minutes] = selectedTime.split(':').map(Number);
         const scheduledDateTime = new Date(selectedDate);
         scheduledDateTime.setHours(hours, minutes, 0, 0);
         updateRealTimeCostEstimate(scheduledDateTime);
       }
-    }, 5 * 60 * 1000); // 5 minutes
-    
+    }, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [activeTab, selectedDate, selectedTime]);
+  }, [activeTab, selectedDate, selectedTime, getCurrentEnergyPrice, updateRealTimeCostEstimate]);
 
   const loadScheduledJobs = async () => {
     try {
       const response = await fetch('http://localhost:5001/api/scheduler/jobs');
       if (response.ok) {
         const jobs = await response.json();
-        const formattedJobs = jobs.map((job: any) => ({
+        const formattedJobs = jobs.map((job: ScheduledJob) => ({
           ...job,
           scheduledTime: new Date(job.scheduledTime),
           createdAt: new Date(job.createdAt)
@@ -196,80 +310,6 @@ const AIInferencePredictor = () => {
     return `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  const getEnergyPriceForTime = async (scheduledTime: Date): Promise<number> => {
-    try {
-      const timestamp = scheduledTime.getTime();
-      const response = await fetch(`http://localhost:5001/api/scheduler/energy-price/${timestamp}`);
-      if (response.ok) {
-        const data = await response.json();
-        return data.price || 85.2; // Use consistent fallback
-      } else {
-        console.warn('Energy price API returned error:', response.status);
-      }
-    } catch (error) {
-      console.error('Failed to fetch energy price:', error);
-    }
-    return 85.2; // Use fixed fallback instead of random
-  };
-
-  // Function to get current energy price (for current time)
-  const getCurrentEnergyPrice = async (): Promise<number> => {
-    try {
-      setIsLoadingPrice(true);
-      const timestamp = Date.now();
-      const response = await fetch(`http://localhost:5001/api/scheduler/energy-price/${timestamp}`);
-      if (response.ok) {
-        const data = await response.json();
-        const price = data.price || 85.2;
-        setCurrentEnergyPrice(price);
-        return price;
-      } else {
-        console.warn('Current energy price API returned error:', response.status);
-        // Use fallback price but don't update state to avoid overriding cached value
-        return currentEnergyPrice;
-      }
-    } catch (error) {
-      console.error('Failed to fetch current energy price:', error);
-      // Use fallback price but don't update state to avoid overriding cached value
-      return currentEnergyPrice;
-    } finally {
-      setIsLoadingPrice(false);
-    }
-  };
-
-  // Function to update real-time cost estimation when date/time changes
-  const updateRealTimeCostEstimate = async (scheduledTime: Date) => {
-    try {
-      setIsLoadingPrice(true);
-      const energyPrice = await getEnergyPriceForTime(scheduledTime);
-      
-      // Use current prediction data if available, otherwise defaults
-      const estimatedRuntime = response?.predictedRuntime || 1.2; // seconds
-      const estimatedPower = response?.predictedPower || 25; // watts
-      const estimatedEnergy = (estimatedRuntime * estimatedPower) / 3600; // Wh
-      const estimatedCost = (estimatedEnergy * energyPrice) / 1000; // EUR
-      const estimatedCostCents = estimatedCost * 100; // cents
-      
-      setRealTimeCostEstimate({
-        cost: estimatedCostCents,
-        runtime: estimatedRuntime,
-        energy: estimatedEnergy,
-        price: energyPrice
-      });
-    } catch (error) {
-      console.error('Failed to update real-time cost estimate:', error);
-      // Set fallback estimate on error
-      setRealTimeCostEstimate({
-        cost: 2.3,
-        runtime: 1.2,
-        energy: 2.7,
-        price: 85.2
-      });
-    } finally {
-      setIsLoadingPrice(false);
-    }
-  };
-
   const estimateJobCost = async (
     modelName: string,
     inputText: string,
@@ -280,21 +320,56 @@ const AIInferencePredictor = () => {
     estimatedEnergy: number;
     energyPrice: number;
   }> => {
-    // Get energy price for scheduled time
-    const energyPrice = await getEnergyPriceForTime(scheduledTime);
-    
-    // Estimate based on current prediction if available, otherwise use defaults
-    const estimatedRuntime = response?.predictedRuntime || 2.5; // seconds
-    const estimatedPower = response?.predictedPower || 30; // watts
-    const estimatedEnergy = (estimatedRuntime * estimatedPower) / 3600; // kWh
-    const estimatedCost = (estimatedEnergy * energyPrice) / 1000; // EUR
-    
-    return {
-      estimatedCost,
-      estimatedRuntime,
-      estimatedEnergy,
-      energyPrice
-    };
+    try {
+      // Call backend /api/predict for model, input, and (optionally) scheduled time
+      const predictRes = await fetch('http://localhost:5001/api/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modelName,
+          inputText
+        })
+      });
+      if (!predictRes.ok) throw new Error('Backend prediction failed');
+      const predictData = await predictRes.json();
+      // Use backend-predicted runtime and power
+      const estimatedRuntime = predictData.predictedRuntime || 2.5;
+      const estimatedPower = predictData.predictedPower || 30;
+      // Find the price forecast for the scheduled time (match hour)
+      let energyPrice = 85.2;
+      if (predictData.priceFuture && predictData.priceFuture.length > 0) {
+        // Try to match the hour of scheduledTime
+        const schedHour = scheduledTime.getHours();
+        const match = predictData.priceFuture.find((p: { datetime: string; price_eur_per_mwh: number }) => {
+          const d = new Date(p.datetime);
+          return d.getHours() === schedHour;
+        });
+        if (match) energyPrice = match.price_eur_per_mwh;
+        else energyPrice = predictData.priceFuture[0].price_eur_per_mwh;
+      }
+      // Calculate energy (Wh) and cost (EUR)
+      const estimatedEnergy = (estimatedRuntime * estimatedPower) / 3600; // Wh
+      const estimatedCost = (estimatedEnergy * energyPrice) / 1000; // EUR
+      return {
+        estimatedCost,
+        estimatedRuntime,
+        estimatedEnergy,
+        energyPrice
+      };
+    } catch (error) {
+      // Fallback to previous local estimation if backend fails
+      const energyPrice = await getEnergyPriceForTime(scheduledTime);
+      const estimatedRuntime = response?.predictedRuntime || 2.5;
+      const estimatedPower = response?.predictedPower || 30;
+      const estimatedEnergy = (estimatedRuntime * estimatedPower) / 3600;
+      const estimatedCost = (estimatedEnergy * energyPrice) / 1000;
+      return {
+        estimatedCost,
+        estimatedRuntime,
+        estimatedEnergy,
+        energyPrice
+      };
+    }
   };
 
   const scheduleJob = async () => {
@@ -451,11 +526,7 @@ const AIInferencePredictor = () => {
   // Function to calculate actual cost if needed
   const calculateActualCost = (energyUsed: number | null, auctionPrice: number | null): number | null => {
     if (energyUsed === null || auctionPrice === null || energyUsed === undefined || auctionPrice === undefined) return null;
-<<<<<<< HEAD
     // Convert energy from Wh to kWh, then multiply to price per MWh, then convert to cents
-=======
-    // Convert energy from Wh to kWh, then multiply to get cost in cents
->>>>>>> 9afa658 (for_bhanu)
     // energyUsed is in Wh, auctionPrice is in EUR/MWh
     const energyInKWh = energyUsed / 1000; // Convert Wh to kWh
     const energyInMWh = energyInKWh / 1000; // Convert kWh to MWh
@@ -557,22 +628,6 @@ const AIInferencePredictor = () => {
     }
   }, [modelName, inputText]);
   
-  // Auto-refresh prediction every hour
-  // Removed - predictions now only run when user clicks the run button
-  // useEffect(() => {
-  //   if (modelName && inputText) {
-  //     // Run the initial prediction when component mounts
-  //     runPrediction();
-  //     
-  //     // Set up hourly refresh interval
-  //     const hourlyRefresh = setInterval(() => {
-  //       runPrediction();
-  //       console.log("Auto-refreshing prediction (hourly update)");
-  //     }, 60 * 60 * 1000); // 60 minutes * 60 seconds * 1000 milliseconds
-  //     
-  //     return () => clearInterval(hourlyRefresh);
-  //   }
-  // }, [modelName, inputText, runPrediction]);
 
   const formatNumber = (num: number | null | undefined): string => {
     if (num === null || num === undefined) return 'N/A';
@@ -581,22 +636,6 @@ const AIInferencePredictor = () => {
     if (num >= 1e3) return (num / 1e3).toFixed(3) + 'K';
     return num.toFixed(3);
   };
-
-  // Function to calculate time remaining until next refresh - REMOVED
-  // Auto-refresh functionality has been disabled
-  // const getTimeUntilNextRefresh = (): string => {
-  //   if (!nextRefreshTime) return '';
-  //   
-  //   const now = new Date();
-  //   const diffMs = nextRefreshTime.getTime() - now.getTime();
-  //   
-  //   if (diffMs <= 0) return 'Refreshing soon...';
-  //   
-  //   const diffMins = Math.floor(diffMs / (60 * 1000));
-  //   const diffSecs = Math.floor((diffMs % (60 * 1000)) / 1000);
-  //   
-  //   return `${diffMins}m ${diffSecs}s`;
-  // };
 
   const BarChart = ({ height = 60, bars = 20 }: { height?: number; bars?: number }) => {
     const heights = Array.from({ length: bars }, () => Math.random() * height + 5);
@@ -627,10 +666,6 @@ const AIInferencePredictor = () => {
       price_eur_per_mwh: item.price_eur_per_mwh
     }));
   };
-
-<<<<<<< HEAD
-=======
-  const [activeTab, setActiveTab] = useState('main'); // 'main', 'details', 'raw', 'cto', 'cfo'
 
   // --- Helper: Aggregate summary for CTO (hardware/model health) ---
   const getCTOSummary = () => {
@@ -703,69 +738,55 @@ const AIInferencePredictor = () => {
   };
 
   // --- Render ---
->>>>>>> 9afa658 (for_bhanu)
   return (
-    <div className="h-[100vh] overflow-hidden flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white px-[1vw]">
+    <div className="h-[100vh] overflow-hidden flex flex-col bg-black text-white px-[2vw] font-sans" style={{ fontFamily: 'Inter, Segoe UI, Arial, sans-serif', background: 'linear-gradient(120deg, #181818 60%, #232323 100%)' }}>
       {/* Navigation Header */}
-      <nav className="flex items-center justify-between px-3 h-[5vh] border-b border-slate-800/50 backdrop-blur-sm bg-slate-900/30">
+      <nav className="flex items-center justify-between px-3 h-[5vh] border-b border-white/10 bg-black/50" style={{ boxShadow: 'none', borderRadius: 0 }}>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
-          </div>
-          <span className="text-sm font-semibold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-            FaradayX
-          </span>
+          <div className="w-6 h-6 bg-white/10 flex items-center justify-center" style={{ borderRadius: 0 }} />
+          <span className="text-base font-bold tracking-widest text-white uppercase" style={{ letterSpacing: '0.15em' }}>FaradayX</span>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-right flex items-center gap-2">
-            <div className="text-xs text-slate-400">
-              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
-          </div>
+          <div className="text-sm text-white/70 font-mono">{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
           <div className="flex items-center gap-1">
             <PulsingDot />
-            <span className="text-xs text-slate-400">Live</span>
+            <span className="text-xs text-white/40">Live</span>
           </div>
         </div>
       </nav>
 
       {/* Main Container */}
-      <div className="h-[95vh] overflow-hidden p-1.5 flex flex-col">
+      <div className="h-[95vh] overflow-hidden p-2 flex flex-col">
         {/* Tabs Navigation */}
-        <div className="flex space-x-1 h-[3vh] mb-1">
+        <div className="flex space-x-4 h-[3vh] mb-4 border-b border-white/10">
           <button
             onClick={() => setActiveTab('main')}
-            className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'main' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
+            className={`px-4 py-1 text-xs font-bold uppercase tracking-widest border-0 bg-transparent transition-colors ${activeTab === 'main' ? 'text-white border-b-2 border-white' : 'text-white/40 hover:text-white/80'}`}
+            style={{ borderRadius: 0 }}
           >
             Dashboard
           </button>
           <button
             onClick={() => setActiveTab('details')}
-            className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'details' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
+            className={`px-4 py-1 text-xs font-bold uppercase tracking-widest border-0 bg-transparent transition-colors ${activeTab === 'details' ? 'text-white border-b-2 border-white' : 'text-white/40 hover:text-white/80'}`}
+            style={{ borderRadius: 0 }}
           >
             Hardware & Model
           </button>
           <button
-<<<<<<< HEAD
             onClick={() => setActiveTab('scheduler')}
-            className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'scheduler' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
+            className={`px-4 py-1 text-xs font-bold uppercase tracking-widest border-0 bg-transparent transition-colors ${activeTab === 'scheduler' ? 'text-white border-b-2 border-white' : 'text-white/40 hover:text-white/80'}`}
+            style={{ borderRadius: 0 }}
           >
             AI Scheduler
           </button>
-
-          {/* Auto-refresh display removed - predictions now only run manually */}
-=======
-            onClick={() => setActiveTab('cto')}
-            className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'cto' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
-          >
-            CTO View
-          </button>
           <button
-            onClick={() => setActiveTab('cfo')}
-            className={`px-2 py-0.5 text-xs rounded-t-lg transition-colors ${activeTab === 'cfo' ? 'bg-slate-800 text-white' : 'bg-slate-900/50 text-slate-400 hover:text-white'}`}
+            onClick={() => setActiveTab('pipeline')}
+            className={`px-4 py-1 text-xs font-bold uppercase tracking-widest border-0 bg-transparent transition-colors ${activeTab === 'pipeline' ? 'text-white border-b-2 border-white' : 'text-white/40 hover:text-white/80'}`}
+            style={{ borderRadius: 0 }}
           >
-            CFO View
+            Pipeline
           </button>
->>>>>>> 9afa658 (for_bhanu)
         </div>
         
         {/* Main Content Area */}
@@ -819,72 +840,62 @@ const AIInferencePredictor = () => {
           {/* Tab Content */}
           {activeTab === 'main' && response && (
             <div className="grid grid-cols-12 gap-2">
-              {/* Performance Metrics */}
-              <div className="col-span-8 bg-slate-800/40 backdrop-blur-sm rounded-xl p-2 border border-slate-700/50 shadow-lg h-[45vh]">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-sm font-semibold">Performance Metrics</h3>
+              {/* Performance Metrics - Make metrics bigger and clearer */}
+              <div className="col-span-8 bg-white/5 backdrop-blur-md rounded-xl p-8 border border-white/10 shadow-none h-[45vh] flex flex-col justify-between">
+                <div>
+                  <h3 className="text-xl font-extrabold mb-2 text-white flex items-center gap-2" style={{ fontFamily: 'Inter, Segoe UI, Arial, sans-serif' }}>
+                    <TrendingUp className="w-6 h-6 text-white/80" />
+                    AI Inference Performance Overview
+                  </h3>
+                  <p className="text-base text-white/70 mb-4" style={{ fontFamily: 'Inter, Segoe UI, Arial, sans-serif' }}>
+                    This dashboard summarizes the latest AI inference run, highlighting efficiency, cost, and technical health. Use these insights to optimize resource allocation and model selection.
+                  </p>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-blue-400" />
-                      RUNTIME
+                <div className="grid grid-cols-3 gap-8 flex-1">
+                  {/* Runtime */}
+                  <div className="flex flex-col items-center justify-center bg-white/10 rounded-lg p-6 border border-white/20 shadow-none">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="w-6 h-6 text-white/80" />
+                      <span className="text-lg text-white font-semibold">Runtime</span>
                     </div>
-                    <div className="h-[10vh]">
-                      <BarChart height={72} bars={10} />
-                    </div>
-                    <div className="text-lg font-light bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+                    <div className="text-5xl font-extrabold text-white mb-1" style={{ fontFamily: 'Inter, Segoe UI, Arial, sans-serif', letterSpacing: '-0.03em' }}>
                       {formatNumber(response.predictedRuntime || extractPredictedRuntime(response.raw))}s
                     </div>
-                    <div className="text-[10px] text-slate-400">predicted runtime</div>
-                    <div className="text-[10px] text-slate-400 mt-1">Input tokens: {typeof response.model?.input_token_length === 'number' ? response.model.input_token_length : 'N/A'}</div>
-                    <div className="text-[10px] text-slate-400">Output tokens: {typeof response.model?.output_token_length === 'number' ? response.model.output_token_length : 'N/A'}</div>
+                    <div className="text-base text-white/70">Predicted</div>
+                    <div className="text-lg text-white mt-2">Actual: <span className="font-bold">{formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</span></div>
+                    <div className="text-xs text-white/50 mt-1">Input: {typeof response.model?.input_token_length === 'number' ? response.model.input_token_length : 'N/A'} | Output: {typeof response.model?.output_token_length === 'number' ? response.model.output_token_length : 'N/A'}</div>
                   </div>
-                  <div>
-                    <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
-                      <Zap className="w-3 h-3 text-yellow-400" />
-                      ENERGY
+                  {/* Energy */}
+                  <div className="flex flex-col items-center justify-center bg-white/10 rounded-lg p-6 border border-white/20 shadow-none">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Zap className="w-6 h-6 text-white/80" />
+                      <span className="text-lg text-white font-semibold">Energy</span>
                     </div>
-                    <div className="h-[10vh]">
-                      <BarChart height={72} bars={10} />
-                    </div>
-                    <div className="text-lg font-light bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+                    <div className="text-5xl font-extrabold text-white mb-1" style={{ fontFamily: 'Inter, Segoe UI, Arial, sans-serif', letterSpacing: '-0.03em' }}>
                       {formatNumber(response.energyUsed)} Wh
                     </div>
-                    <div className="text-[10px] text-slate-400">energy used</div>
+                    <div className="text-base text-white/70">Total Used</div>
+                    <div className="text-lg text-white mt-2">Power: <span className="font-bold">{formatNumber(response.predictedPower || extractPredictedPower(response.raw))}W</span></div>
                   </div>
-                  <div>
-                    <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
-                      <DollarSign className="w-3 h-3 text-green-400" />
-                      COST
+                  {/* Cost */}
+                  <div className="flex flex-col items-center justify-center bg-white/10 rounded-lg p-6 border border-white/20 shadow-none">
+                    <div className="flex items-center gap-2 mb-2">
+                      <DollarSign className="w-6 h-6 text-white/80" />
+                      <span className="text-lg text-white font-semibold">Cost</span>
                     </div>
-                    <div className="h-[10vh]">
-                      <BarChart height={72} bars={10} />
-                    </div>
-                    <div className="text-xl font-light bg-gradient-to-r from-green-400 to-green-300 bg-clip-text text-transparent">
+                    <div className="text-5xl font-extrabold text-white mb-1" style={{ fontFamily: 'Inter, Segoe UI, Arial, sans-serif', letterSpacing: '-0.03em' }}>
                       {formatNumber(response.costCents)}¢
                     </div>
-                    <div className="text-[2vh] text-slate-400">per inference</div>
+                    <div className="text-base text-white/70">Per Inference</div>
+                    <div className="text-lg text-white mt-2">Error: <span className={`font-bold ${response.error !== null && response.error < 20 ? 'text-green-400' : 'text-yellow-400'}`}>{formatNumber(response.error)}%</span></div>
                   </div>
                 </div>
-                {/* Additional Metrics Row */}
-                <div className="grid grid-cols-3 gap-1 mt-2 pt-2 border-t border-slate-700/30 text-center h-[15vh]">
-                  <div className="flex flex-col justify-center">
-                    <div className="text-[2vh] text-slate-400">Actual Runtime</div>
-                    <div className="text-[3vh] font-light">{formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</div>
+                <div className="mt-6 flex flex-col gap-2">
+                  <div className="text-base text-white/80">
+                    <span className="font-bold">Story:</span> The model <span className="font-bold text-white">{modelName}</span> processed your input in <span className="font-bold text-white">{formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</span>, consuming <span className="font-bold text-white">{formatNumber(response.energyUsed)} Wh</span> and costing <span className="font-bold text-white">{formatNumber(response.costCents)}¢</span> per inference. Accuracy and efficiency metrics help you identify optimization opportunities.
                   </div>
-                  <div className="flex flex-col justify-center">
-                    <div className="text-[2vh] text-slate-400">Power</div>
-                    <div className="text-[3vh] font-light">{formatNumber(response.predictedPower || extractPredictedPower(response.raw))}W</div>
-                  </div>
-                  <div className="flex flex-col justify-center">
-                    <div className="text-[2vh] text-slate-400">Error</div>
-                    <div className={`text-[3vh] font-light ${response.error !== null && response.error < 20 ? 'text-green-400' : 'text-yellow-400'}`}>{formatNumber(response.error)}%</div>
-                  </div>
-
                 </div>
               </div>
-
               {/* System Status */}
               <div className="col-span-4 bg-slate-800/40 backdrop-blur-sm rounded-xl p-2 border border-slate-700/50 shadow-lg h-[45vh]">
                 <div className="flex items-center justify-between mb-1">
@@ -954,153 +965,123 @@ const AIInferencePredictor = () => {
           )}
 
           {activeTab === 'details' && response && (
-            <div className="grid grid-cols-12 gap-2">
-              {/* Hardware Details */}
-              <div className="col-span-6 bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
-                <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-blue-400" />
-                  Hardware Configuration
-                </h3>
-                <div className="overflow-x-auto h-[38vh] relative scrollable-data-table">
-                  <table className="min-w-full text-xs text-left text-slate-300">
-                    <thead className="sticky top-0 bg-slate-800 z-10">
-                      <tr>
-                        <th className="px-2 py-1 font-medium">Field</th>
-                        <th className="px-2 py-1 font-medium">Value</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700/30">
-                      {response.hardware && Object.entries(response.hardware).map(([key, value]) => (
-                        <tr key={key} className="hover:bg-slate-700/20">
-                          <td className="px-2 py-1 font-medium whitespace-nowrap text-slate-400">{key.replace(/_/g, ' ')}</td>
-                          <td className="px-2 py-1 whitespace-pre-wrap break-all">
-                            {typeof value === 'object' ? JSON.stringify(value) : 
-                             key === 'memory_bytes' ? `${(Number(value) / 1e9).toFixed(2)} GB` :
-                             key === 'cpu_frequency' ? `${(Number(value) / 1e9).toFixed(2)} GHz` :
-                             value?.toString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            <div className="w-full flex flex-col items-center justify-start pt-8 pb-12 px-4 min-h-[60vh]">
+              {/* Story Header */}
+              <div className="mb-8 text-center">
+                <h2 className="text-3xl font-extrabold text-white mb-2 tracking-tight" style={{ fontFamily: 'Inter, Segoe UI, Arial, sans-serif' }}>
+                  The Inference Journey
+                </h2>
+                <p className="text-lg text-white/80 max-w-2xl mx-auto">
+                  Follow the path from hardware environment to model configuration, culminating in your AI inference result. Each step impacts performance, cost, and efficiency.
+                </p>
+              </div>
+              {/* Vertical Timeline/Stepper Layout */}
+              <div className="flex flex-col items-center w-full max-w-5xl mx-auto gap-12 relative">
+                {/* Hardware Section */}
+                <div className="flex flex-col items-center w-full">
+                  <div className="bg-white/10 text-white px-8 py-6 rounded-2xl border border-white/30 shadow-none min-w-[260px] max-w-[420px] w-full mb-4">
+                    <h3 className="text-xl font-bold mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <Cpu className="w-7 h-7 text-white/80" /> Hardware Environment
+                    </h3>
+                    <table className="min-w-full text-base text-left text-white/90 border-separate border-spacing-y-1">
+                      <tbody>
+                        {response.hardware && Object.entries(response.hardware).map(([key, value]) => (
+                          <tr key={key}>
+                            <td className="pr-2 text-white/70 font-medium whitespace-nowrap">{key.replace(/_/g, ' ')}</td>
+                            <td className="pl-2 whitespace-pre-wrap break-all text-white/90">
+                              {typeof value === 'object' ? JSON.stringify(value) : 
+                                key === 'memory_bytes' ? `${(Number(value) / 1e9).toFixed(2)} GB` :
+                                key === 'cpu_frequency' ? `${(Number(value) / 1e9).toFixed(2)} GHz` :
+                                value?.toString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-base text-white/70 max-w-xs text-center mb-2">
+                    <span className="font-semibold text-white">Your hardware</span> provides the computational foundation for every inference. More cores, memory, and GPU acceleration can dramatically improve speed and efficiency.
+                  </div>
+                </div>
+                {/* Stepper Connector */}
+                <div className="flex flex-col items-center justify-center">
+                  <svg width="4" height="60" viewBox="0 0 4 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="4" height="60" rx="2" fill="#fff" opacity="0.2" />
+                  </svg>
+                </div>
+                {/* Model Section */}
+                <div className="flex flex-col items-center w-full">
+                  <div className="bg-white/10 text-white px-8 py-6 rounded-2xl border border-white/30 shadow-none min-w-[260px] max-w-[420px] w-full mb-4">
+                    <h3 className="text-xl font-bold mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <Settings className="w-7 h-7 text-white/80" /> Model Configuration
+                    </h3>
+                    <div className="overflow-x-auto max-h-[28vh] relative">
+                      {(() => {
+                        let modelFeatures = null;
+                        if (response.raw && response.raw.includes("Extracted Features:")) {
+                          try {
+                            const extractedPart = response.raw.split("Extracted Features:")[1];
+                            const jsonMatch = extractedPart.match(/\{[\s\S]*?\n\}/);
+                            if (jsonMatch) {
+                              modelFeatures = JSON.parse(jsonMatch[0]);
+                            }
+                          } catch (e) {
+                            console.error('Error parsing model features:', e);
+                          }
+                        }
+                        const hardwareFields = [
+                          'cpu_frequency', 'num_cores', 'memory_bytes', 'device', 'os', 'os_version', 
+                          'machine', 'gpu_available', 'architecture', 'platform', 'processor', 
+                          'cpu_model', 'ram', 'storage', 'gpu_model', 'gpu_memory', 'system_info',
+                          'hardware_id', 'device_type', 'compute_capability', 'driver_version'
+                        ];
+                        const modelOnlyFields = modelFeatures ? Object.fromEntries(
+                          Object.entries(modelFeatures).filter(([key]) => 
+                            !hardwareFields.includes(key) && key !== 'layer_types'
+                          )
+                        ) : null;
+                        return modelOnlyFields && Object.keys(modelOnlyFields).length > 0 ? (
+                          <ModelFeatures modelOnlyFields={modelOnlyFields} />
+                        ) : (
+                          <div className="text-base text-white/60">No model configuration details available.</div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                  <div className="text-base text-white/70 max-w-xs text-center mb-2">
+                    <span className="font-semibold text-white">Your model</span> architecture and configuration determine how data is processed and predictions are made. More parameters and layers can mean greater capability, but also higher cost.
+                  </div>
+                </div>
+                {/* Stepper Connector */}
+                <div className="flex flex-col items-center justify-center">
+                  <svg width="4" height="60" viewBox="0 0 4 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="4" height="60" rx="2" fill="#fff" opacity="0.2" />
+                  </svg>
+                </div>
+                {/* Inference Result Section */}
+                <div className="flex flex-col items-center w-full">
+                  <div className="bg-white/90 text-black px-8 py-6 rounded-2xl border border-white/60 shadow-lg min-w-[260px] max-w-[420px] w-full mb-4">
+                    <h3 className="text-xl font-bold mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <TrendingUp className="w-7 h-7 text-black/80" /> Inference Result
+                    </h3>
+                    <div className="text-lg font-semibold mb-2">{modelName}</div>
+                    <div className="text-base mb-1"><span className="font-bold">Runtime:</span> {formatNumber(response.actualRuntime || extractActualRuntime(response.raw))}s</div>
+                    <div className="text-base mb-1"><span className="font-bold">Energy:</span> {formatNumber(response.energyUsed)} Wh</div>
+                    <div className="text-base mb-1"><span className="font-bold">Cost:</span> {formatNumber(response.costCents)}¢</div>
+                    <div className="text-base mb-1"><span className="font-bold">Accuracy:</span> {calculateAccuracy('runtime', response).toFixed(2)}%</div>
+                  </div>
+                  <div className="text-base text-black/70 max-w-xs text-center">
+                    <span className="font-semibold text-black">Result:</span> Your inference run brings together hardware and model choices, producing a result that balances speed, energy, and cost.
+                  </div>
                 </div>
               </div>
-
-              {/* Model Features */}
-              {(() => {
-                let modelFeatures = null;
-                if (response.raw && response.raw.includes("Extracted Features:")) {
-                  try {
-                    const extractedPart = response.raw.split("Extracted Features:")[1];
-                    const jsonMatch = extractedPart.match(/\{[\s\S]*?\n\}/);
-                    if (jsonMatch) {
-                      modelFeatures = JSON.parse(jsonMatch[0]);
-                    }
-                  } catch (e) {
-                    console.error('Error parsing model features:', e);
-                  }
-                }
-
-                // Filter out hardware-related fields that shouldn't be in model configuration
-                const hardwareFields = [
-                  'cpu_frequency', 'num_cores', 'memory_bytes', 'device', 'os', 'os_version', 
-                  'machine', 'gpu_available', 'architecture', 'platform', 'processor', 
-                  'cpu_model', 'ram', 'storage', 'gpu_model', 'gpu_memory', 'system_info',
-                  'hardware_id', 'device_type', 'compute_capability', 'driver_version'
-                ];
-                const modelOnlyFields = modelFeatures ? Object.fromEntries(
-                  Object.entries(modelFeatures).filter(([key]) => 
-                    !hardwareFields.includes(key) && key !== 'layer_types'
-                  )
-                ) : null;
-                
-                return modelOnlyFields && Object.keys(modelOnlyFields).length > 0 ? (
-                  <div className="col-span-6 bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh]">
-                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                      <Settings className="w-4 h-4 text-purple-400" />
-                      Model Configuration
-                    </h4>
-                    <div className="overflow-x-auto h-[38vh] relative scrollable-data-table">
-                      <table className="min-w-full text-xs text-left text-slate-300">
-                        <thead className="sticky top-0 bg-slate-800 z-10">
-                          <tr>
-                            <th className="px-2 py-1 font-medium">Field</th>
-                            <th className="px-2 py-1 font-medium">Value</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-700/30">
-                          {Object.entries(modelOnlyFields).map(([key, value]) => (
-                            <tr key={key} className="hover:bg-slate-700/20">
-                              <td className="px-2 py-1 font-medium whitespace-nowrap text-slate-400">{key.replace(/_/g, ' ')}</td>
-                              <td className="px-2 py-1 whitespace-pre-wrap break-all">
-                                {Array.isArray(value) ? `[${value.join(', ')}]` : 
-                                 key === 'num_params' ? Number(value).toLocaleString() :
-                                 key === 'flops' ? Number(value).toLocaleString() :
-                                 typeof value === 'object' ? JSON.stringify(value) : 
-                                 value?.toString()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : null;
-              })()}
-
-              {/* Layer Types Breakdown */}
-              {(() => {
-                let layerTypes = null;
-                if (response.raw && response.raw.includes("Extracted Features:")) {
-                  try {
-                    const extractedPart = response.raw.split("Extracted Features:")[1];
-                    const jsonMatch = extractedPart.match(/\{[\s\S]*?\n\}/);
-                    if (jsonMatch) {
-                      const modelFeatures = JSON.parse(jsonMatch[0]);
-                      layerTypes = modelFeatures.layer_types;
-                    }
-                  } catch (e) {
-                    console.error('Error parsing layer types:', e);
-                  }
-                }
-                
-                return layerTypes ? (
-                  <div className="col-span-12 bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 border border-slate-700/50 shadow-lg h-[45vh] mt-2">
-                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                      <Monitor className="w-4 h-4 text-green-400" />
-                      Layer Types Breakdown
-                      <span className="text-xs text-slate-500 ml-auto">{Object.keys(layerTypes).length} unique layer types</span>
-                    </h4>
-                    <div className="overflow-x-auto h-[38vh] relative scrollable-data-table">
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                        {Object.entries(layerTypes)
-                          .sort(([,a], [,b]) => Number(b) - Number(a))
-                          .map(([layerType, count]) => {
-                            const countNum = Number(count);
-                            const allCounts = Object.values(layerTypes).map(c => Number(c));
-                            const totalLayers = allCounts.reduce((sum, num) => sum + num, 0);
-                            const percentage = totalLayers > 0 ? ((countNum / totalLayers) * 100).toFixed(1) : '0.0';
-                            
-                            return (
-                          <div key={layerType} className="bg-slate-700/30 rounded-lg p-3 border border-slate-600/20 hover:bg-slate-700/40 transition-colors">
-                            <div className="text-xs font-medium text-slate-300 mb-1 truncate" title={layerType}>
-                              {layerType}
-                            </div>
-                            <div className="text-lg font-bold text-white">
-                              {countNum.toLocaleString()}
-                            </div>
-                            <div className="text-[10px] text-slate-500">
-                              {percentage}%
-                            </div>
-                          </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  </div>
-                ) : null;
-              })()}
-
+              {/* Story Summary */}
+              <div className="mt-10 text-center">
+                <h4 className="text-xl font-bold text-white mb-2">Summary</h4>
+                <p className="text-lg text-white/80 max-w-2xl mx-auto">
+                  Every inference is a journey: <span className="font-semibold text-white">hardware</span> enables computation, <span className="font-semibold text-white">model configuration</span> shapes intelligence, and <span className="font-semibold text-white">results</span> reveal the impact. Optimize each step for the best performance and value.
+                </p>
+              </div>
             </div>
           )}
 
@@ -1142,7 +1123,15 @@ const AIInferencePredictor = () => {
                       <Input
                         type="time"
                         value={selectedTime}
-                        onChange={(e) => setSelectedTime(e.target.value)}
+                        onChange={(e) => {
+                          setSelectedTime(e.target.value);
+                          if (selectedDate && e.target.value) {
+                            const [hours, minutes] = e.target.value.split(":").map(Number);
+                            const scheduledDateTime = new Date(selectedDate);
+                            scheduledDateTime.setHours(hours, minutes, 0, 0);
+                            updateRealTimeCostEstimate(scheduledDateTime);
+                          }
+                        }}
                         className="h-8 text-xs bg-slate-700/50 border-slate-600/50"
                       />
                     </div>
@@ -1176,7 +1165,15 @@ const AIInferencePredictor = () => {
                   <Calendar
                     mode="single"
                     selected={selectedDate}
-                    onSelect={setSelectedDate}
+                    onSelect={(date) => {
+                      setSelectedDate(date);
+                      if (date && selectedTime) {
+                        const [hours, minutes] = selectedTime.split(":").map(Number);
+                        const scheduledDateTime = new Date(date);
+                        scheduledDateTime.setHours(hours, minutes, 0, 0);
+                        updateRealTimeCostEstimate(scheduledDateTime);
+                      }
+                    }}
                     disabled={(date) => date < new Date()}
                     className="rounded-md border-0 w-full h-full"
                     classNames={{
@@ -1232,12 +1229,17 @@ const AIInferencePredictor = () => {
                             {realTimeCostEstimate ? `${realTimeCostEstimate.cost.toFixed(3)}¢` : '~2.3¢'}
                           </div>
                           <div className="text-xs text-slate-400 mt-1 font-medium">Est. Cost</div>
+                          {realTimeCostEstimate && (
+                            <div className="text-xs text-slate-400 mt-1">
+                              <span className="font-medium">(API)</span>
+                            </div>
+                          )}
                         </div>
                         <div className="p-2.5 bg-slate-700/40 rounded-lg text-center border border-slate-600/30">
                           <div className="text-lg font-bold text-blue-400">
                             {realTimeCostEstimate ? `${realTimeCostEstimate.runtime.toFixed(1)}s` : '~1.2s'}
                           </div>
-                          <div className="text-xs text-slate-400 mt-1 font-medium">Est. Runtime</div>
+                          <div className="text-base text-white/70">Est. Runtime</div>
                         </div>
                       </div>
                     </div>
@@ -1481,6 +1483,165 @@ const AIInferencePredictor = () => {
             />
           )}
 
+          {activeTab === 'pipeline' && (
+            <div className="w-full flex flex-col items-center justify-center pt-12 pb-12 px-4 min-h-[60vh]">
+              <h2 className="text-3xl font-extrabold text-white mb-8 tracking-tight text-center" style={{ fontFamily: 'Inter, Segoe UI, Arial, sans-serif' }}>
+                Backend Inference Time Prediction Pipeline
+              </h2>
+              <div className="flex flex-row items-center justify-center gap-8 w-full max-w-6xl">
+                {/* Step 1: User Input */}
+                <div className="flex flex-col items-center">
+                  <div className="bg-white/10 text-white px-6 py-4 rounded-2xl border border-white/30 shadow-none min-w-[180px] max-w-[220px] text-center mb-2">
+                    <div className="mb-2"><span className="font-bold text-lg">User Input</span></div>
+                    <div className="text-sm text-white/80">Prompt, Model Name, Hardware Info</div>
+                  </div>
+                  <span className="text-xs text-white/50">(Frontend)</span>
+                </div>
+                {/* Arrow */}
+                <svg width="60" height="24" viewBox="0 0 60 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M0 12 H54" stroke="#fff" strokeWidth="3" strokeDasharray="8 4" opacity="0.7" />
+                  <polygon points="54,6 60,12 54,18" fill="#fff" opacity="0.7" />
+                </svg>
+                {/* Step 2: Feature Extraction */}
+                <div className="flex flex-col items-center">
+                  <div className="bg-white/10 text-white px-6 py-4 rounded-2xl border border-white/30 shadow-none min-w-[180px] max-w-[220px] text-center mb-2">
+                    <div className="mb-2"><span className="font-bold text-lg">Feature Extraction</span></div>
+                    <div className="text-sm text-white/80">Extracts hardware & model features, input length, etc.</div>
+                  </div>
+                  <span className="text-xs text-white/50">(Python backend)</span>
+                </div>
+                {/* Arrow */}
+                <svg width="60" height="24" viewBox="0 0 60 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M0 12 H54" stroke="#fff" strokeWidth="3" strokeDasharray="8 4" opacity="0.7" />
+                  <polygon points="54,6 60,12 54,18" fill="#fff" opacity="0.7" />
+                </svg>
+                {/* Step 3: ML Model */}
+                <div className="flex flex-col items-center">
+                  <div className="bg-white/10 text-white px-6 py-4 rounded-2xl border border-white/30 shadow-none min-w-[180px] max-w-[220px] text-center mb-2">
+                    <div className="mb-2"><span className="font-bold text-lg">ML Model</span></div>
+                    <div className="text-sm text-white/80">Trained regressor (e.g., RandomForest) predicts inference time</div>
+                  </div>
+                  <span className="text-xs text-white/50">(Python backend)</span>
+                </div>
+                {/* Arrow */}
+                <svg width="60" height="24" viewBox="0 0 60 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M0 12 H54" stroke="#fff" strokeWidth="3" strokeDasharray="8 4" opacity="0.7" />
+                  <polygon points="54,6 60,12 54,18" fill="#fff" opacity="0.7" />
+                </svg>
+                {/* Step 4: Prediction Output */}
+                <div className="flex flex-col items-center">
+                  <div className="bg-white/10 text-white px-6 py-4 rounded-2xl border border-white/30 shadow-none min-w-[180px] max-w-[220px] text-center mb-2">
+                    <div className="mb-2"><span className="font-bold text-lg">Prediction Output</span></div>
+                    <div className="text-sm text-white/80">Returns predicted inference time to frontend</div>
+                  </div>
+                  <span className="text-xs text-white/50">(API response)</span>
+                </div>
+              </div>
+              <div className="mt-10 text-center">
+                <h4 className="text-xl font-bold text-white mb-2">How it works</h4>
+                <p className="text-lg text-white/80 max-w-2xl mx-auto">
+                  The backend receives your input, extracts relevant features, runs them through a trained ML model, and returns a fast, data-driven prediction of inference time. This enables real-time cost and scheduling optimization.
+                </p>
+              </div>
+              {/* Backend Artifacts & Insights - use main pipelineInfo state */}
+              <div className="w-full max-w-5xl mx-auto mt-16 grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Evaluation Report */}
+                <div className="bg-white/10 rounded-xl p-6 border border-white/20">
+                  <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <span>📊</span> Evaluation Report
+                  </h3>
+                  {pipelineLoading ? (
+                    <div className="text-white/60">Loading…</div>
+                  ) : pipelineError ? (
+                    <div className="text-red-400">{pipelineError}</div>
+                  ) : pipelineInfo?.evaluation_report ? (
+                    <div className="space-y-1 mt-2">
+                      {Object.entries(pipelineInfo.evaluation_report).map(([k, v]) => (
+                        <div key={k} className="flex justify-between text-xs text-white/80">
+                          <span className="font-medium">{k}</span>
+                          <span className="text-green-400 font-mono">{typeof v === 'number' ? v.toFixed(4) : String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-white/60">No evaluation report found.</div>
+                  )}
+                </div>
+                {/* Feature Importances */}
+                <div className="bg-white/10 rounded-xl p-6 border border-white/20">
+                  <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <span>🌟</span> Feature Importances
+                  </h3>
+                  {pipelineLoading ? (
+                    <div className="text-white/60">Loading…</div>
+                  ) : pipelineError ? (
+                    <div className="text-red-400">{pipelineError}</div>
+                  ) : pipelineInfo?.feature_importance ? (
+                    <div className="space-y-1 mt-2">
+                      {Object.entries(pipelineInfo.feature_importance).map(([feature, value]) => (
+                        <div key={feature} className="flex justify-between text-xs text-white/80">
+                          <span className="font-medium">{feature}</span>
+                          <span className="text-blue-400 font-mono">{value.toFixed(4)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-white/60">No feature importance data.</div>
+                  )}
+                </div>
+                {/* Log Files */}
+                <div className="bg-white/10 rounded-xl p-6 border border-white/20">
+                  <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <span>📝</span> Log Files
+                  </h3>
+                  {pipelineLoading ? (
+                    <div className="text-white/60">Loading…</div>
+                  ) : pipelineError ? (
+                    <div className="text-red-400">{pipelineError}</div>
+                  ) : pipelineInfo?.logs && pipelineInfo.logs.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {pipelineInfo.logs.map(log => (
+                        <span key={log} className="bg-slate-700/40 text-xs text-white/70 px-2 py-1 rounded-md border border-slate-600/30">{log}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-white/60">No logs found.</div>
+                  )}
+                </div>
+                {/* Benchmarks Preview */}
+                <div className="bg-white/10 rounded-xl p-6 border border-white/20">
+                  <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <span>📈</span> Benchmarks Preview
+                  </h3>
+                  {pipelineLoading ? (
+                    <div className="text-white/60">Loading…</div>
+                  ) : pipelineError ? (
+                    <div className="text-red-400">{pipelineError}</div>
+                  ) : pipelineInfo?.benchmarks ? (
+                    <div className="overflow-x-auto mt-2">
+                      <table className="min-w-full text-xs text-white/80 border-separate border-spacing-y-1">
+                        <thead>
+                          <tr>
+                            {pipelineInfo.benchmarks[0]?.map((h, i) => <th key={i} className="font-bold text-white/90 pr-2 pb-1">{h}</th>)}
+                        </tr>
+                        </thead>
+                        <tbody>
+                          {pipelineInfo.benchmarks.slice(1, 6).map((row, i) => (
+                            <tr key={i}>
+                              {row.map((cell, j) => <td key={j} className="pr-2 text-white/80">{cell}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {pipelineInfo.benchmarks.length > 6 && <div className="text-xs text-slate-400 mt-1">…{pipelineInfo.benchmarks.length - 6} more rows</div>}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-white/60">No benchmark data.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

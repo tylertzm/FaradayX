@@ -40,3 +40,35 @@
 .read-the-docs {
   color: #888;
 }
+
+/* App-level overrides for black & white transparent theme */
+body, #root {
+  background: transparent !important;
+  color: #fff !important;
+}
+
+.app-container, .main-content, .card, .bg-card {
+  background: rgba(0,0,0,0.6) !important;
+  color: #fff !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+input, textarea, select, button {
+  background: rgba(0,0,0,0.7) !important;
+  color: #fff !important;
+  border: 1px solid #444 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+::-webkit-input-placeholder { color: #bbb !important; }
+::-moz-placeholder { color: #bbb !important; }
+:-ms-input-placeholder { color: #bbb !important; }
+::placeholder { color: #bbb !important; }
+
+hr {
+  border: none;
+  border-bottom: 1px solid #222;
+  margin: 2rem 0;
+}

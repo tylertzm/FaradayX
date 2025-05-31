@@ -44,7 +44,7 @@
 /* Styles for scrollable data tables */
 .scrollable-data-table::-webkit-scrollbar {
   width: 6px;
-  background-color: rgba(15, 23, 42, 0.3);
+  background-color: rgba(53, 68, 104, 0.3);
   border-radius: 4px;
 }
 

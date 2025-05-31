@@ -10,12 +10,15 @@ from datetime import datetime, timedelta
 import uuid
 import threading
 import time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from api_pipeline_info import api_pipeline_info
 
 # Set the TOKENIZERS_PARALLELISM environment variable to prevent warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"], expose_headers=["Content-Type"], methods=["GET", "POST", "OPTIONS", "DELETE", "PUT"])
+app.register_blueprint(api_pipeline_info)
 
 # Initialize SQLite database for scheduled jobs
 def init_db():
