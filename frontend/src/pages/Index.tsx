@@ -743,7 +743,7 @@ const AIInferencePredictor = () => {
       {/* Navigation Header */}
       <nav className="flex items-center justify-between px-3 h-[5vh] border-b border-white/10 bg-black/50" style={{ boxShadow: 'none', borderRadius: 0 }}>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-white/10 flex items-center justify-center" style={{ borderRadius: 0 }} />
+          <img src="/Logo-SVG-v2.svg" alt="Logo" className="w-8 h-8 object-contain" style={{ minWidth: 24, minHeight: 24 }} />
           <span className="text-base font-bold tracking-widest text-white uppercase" style={{ letterSpacing: '0.15em' }}>FaradayX</span>
         </div>
         <div className="flex items-center gap-4">
