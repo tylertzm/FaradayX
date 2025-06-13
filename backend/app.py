@@ -8,15 +8,11 @@ import json
 import os
 import sys
 import pandas as pd
-import subprocess
 from extract_model_features import extract_model_features
 from extract_hardware_features import extract_hardware_features
 
 # Set the TOKENIZERS_PARALLELISM environment variable to prevent warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-# Run energy price simulation to generate data.csv before anything else
-subprocess.run([sys.executable, 'energy_price_simulation.py'])
 
 # Try to load estimator
 try:
@@ -48,7 +44,11 @@ def main():
         model = AutoModelForCausalLM.from_pretrained(model_name)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         input_text = input("Enter example input text (or leave blank for default): ").strip() or "Hello, this is a test."
-        inputs = tokenizer(input_text, return_tensors="pt")
+        # Add padding and attention mask
+        inputs = tokenizer(input_text, return_tensors="pt", padding=True, add_special_tokens=True)
+        # Ensure attention mask is set
+        if "attention_mask" not in inputs:
+            inputs["attention_mask"] = torch.ones_like(inputs["input_ids"])
         example_input = inputs["input_ids"]
         model_features = extract_model_features(model, example_input)
     except Exception as e:
@@ -77,6 +77,9 @@ def main():
         print(f"\n[ML Model] Predicted runtime (seconds): {y_pred:.4f}")
     else:
         y_pred = heuristic_predict(features)
+        if y_pred is None:
+            print("\n[Heuristic] Could not predict runtime - missing required features")
+            return
         print(f"\n[Heuristic] Predicted runtime (seconds): {y_pred:.4f}")
 
     # --- Cost Prediction Section ---
@@ -84,7 +87,7 @@ def main():
     try:
         # First try to get from hardware features
         avg_power = float(features.get("avg_cpu_power", 0))
-        
+
         # If not available, try to get average from benchmark data
         if avg_power == 0:
             try:
@@ -98,21 +101,21 @@ def main():
             except Exception as e:
                 print(f"[WARN] Could not load benchmark power data: {e}")
                 avg_power = 0
-        
+
         # Final fallback to default
         if avg_power == 0:
             avg_power = 30
             print(f"Using default power: {avg_power}W")
-            
+
     except Exception:
         avg_power = 30
         print(f"Using fallback default power: {avg_power}W")
     # Energy used (kWh)
     energy_used_kwh = (y_pred * avg_power) / 3600  # seconds * W / 3600 = kWh
-    
+
     # Print average power for server extraction
     print(f"avg_power = {avg_power:.2f}")
-    
+
     # Load latest auction price from data.csv (EUR/MWh)
     import csv
     auction_price_eur_per_mwh = None
