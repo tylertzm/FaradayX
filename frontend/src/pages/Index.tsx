@@ -105,10 +105,10 @@ const AIInferencePredictor = () => {
   const [scheduleInputText, setScheduleInputText] = useState('What is a good alternative to John?');
   const [isScheduling, setIsScheduling] = useState(false);
   const [activeTab, setActiveTab] = useState('main'); // 'main', 'details', 'scheduler', 'pipeline'
-  
+
   // Real-time cost estimation state
   const [currentEnergyPrice, setCurrentEnergyPrice] = useState<number>(85.2);
-  
+
   // Real-time runtime tracking
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
   const [realTimeCostEstimate, setRealTimeCostEstimate] = useState<{
@@ -131,11 +131,11 @@ const AIInferencePredictor = () => {
   // Auto-refresh jobs when on scheduler tab
   useEffect(() => {
     if (activeTab !== 'scheduler') return;
-    
+
     const interval = setInterval(() => {
       loadScheduledJobs();
     }, 30000);
-    
+
     return () => clearInterval(interval);
   }, [activeTab]);
 
@@ -314,7 +314,7 @@ const AIInferencePredictor = () => {
     modelName: string,
     inputText: string,
     scheduledTime: Date
-  ): Promise<{ 
+  ): Promise<{
     estimatedCost: number;
     estimatedRuntime: number;
     estimatedEnergy: number;
@@ -422,7 +422,7 @@ const AIInferencePredictor = () => {
         createdAt: new Date()
       };
 
-      setScheduledJobs(prev => [...prev, newJob].sort((a, b) => 
+      setScheduledJobs(prev => [...prev, newJob].sort((a, b) =>
         a.scheduledTime.getTime() - b.scheduledTime.getTime()
       ));
 
@@ -431,7 +431,7 @@ const AIInferencePredictor = () => {
       setSelectedTime('12:00');
       setScheduleModelName('Qwen/Qwen3-0.6B');
       setScheduleInputText('What is a good alternative to John?');
-      
+
       setErrorMsg('');
     } catch (error) {
       setErrorMsg('Failed to schedule job: ' + (error as Error).message);
@@ -458,9 +458,9 @@ const AIInferencePredictor = () => {
 
   const runJobNow = async (job: ScheduledJob) => {
     // Update job status to running
-    setScheduledJobs(prev => prev.map(j => 
-      j.id === job.id ? { 
-        ...j, 
+    setScheduledJobs(prev => prev.map(j =>
+      j.id === job.id ? {
+        ...j,
         status: 'running'
       } : j
     ));
@@ -474,28 +474,28 @@ const AIInferencePredictor = () => {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to run job');
       }
-      
+
       const result = await response.json();
-      
+
       // Store the actual runtime from the backend response
-      setScheduledJobs(prev => prev.map(j => 
-        j.id === job.id ? { 
-          ...j, 
+      setScheduledJobs(prev => prev.map(j =>
+        j.id === job.id ? {
+          ...j,
           actualRuntime: result.actualRuntime
         } : j
       ));
-      
+
       // Update job with results and reload jobs to get updated status from backend
       await loadScheduledJobs();
-      
+
     } catch (error) {
       console.error('Failed to run job:', error);
       setErrorMsg(`Failed to run job: ${(error as Error).message}`);
-      
+
       // Update job status to failed
-      setScheduledJobs(prev => prev.map(j => 
-        j.id === job.id ? { 
-          ...j, 
+      setScheduledJobs(prev => prev.map(j =>
+        j.id === job.id ? {
+          ...j,
           status: 'failed'
         } : j
       ));
@@ -541,7 +541,7 @@ const AIInferencePredictor = () => {
     response: PredictionResponse | null
   ): number => {
     if (!response) return 85; // Default fallback value
-    
+
     switch (metric) {
       case 'runtime': {
         if (response.predictedRuntime || response.actualRuntime) {
@@ -553,44 +553,44 @@ const AIInferencePredictor = () => {
         }
         return response.error !== null ? (100 - response.error) : 85;
       }
-        
+
       case 'power': {
         // Use direct power values from response if available
         if (response.predictedPower && response.actualPower && response.actualPower > 0) {
           const powerError = Math.abs((response.predictedPower - response.actualPower) / response.actualPower) * 100;
           return Math.min(100, Math.max(0, 100 - powerError));
         }
-        
+
         // Try extracting from raw text if not in response
         const predictedPower = response.predictedPower || extractPredictedPower(response.raw);
         const actualPower = response.actualPower || extractActualPower(response.raw);
-        
+
         if (predictedPower && actualPower && actualPower > 0) {
           const powerError = Math.abs((predictedPower - actualPower) / actualPower) * 100;
           return Math.min(100, Math.max(0, 100 - powerError));
         }
-        
+
         // If we don't have actual power data, derive from runtime error but with a fixed offset
         // This makes it stable between renders but still related to runtime accuracy
-        return response.error !== null ? 
-          Math.min(100, Math.max(0, 100 - response.error - 2)) : 
+        return response.error !== null ?
+          Math.min(100, Math.max(0, 100 - response.error - 2)) :
           88;
       }
-        
+
       case 'cost': {
         // Extract predicted and actual cost values
         const predictedCost = response.costCents || extractPredictedCost(response.raw);
         const actualCost = response.actualCostCents || calculateActualCost(response.energyUsed, response.auctionPrice);
-        
+
         if (predictedCost && actualCost && actualCost > 0) {
           const costError = Math.abs((predictedCost - actualCost) / actualCost) * 100;
           return Math.min(100, Math.max(0, 100 - costError));
         }
-        
+
         // If we don't have actual cost data, derive from runtime error but with a fixed offset
         // This makes it stable between renders but still related to runtime accuracy
-        return response.error !== null ? 
-          Math.min(100, Math.max(0, 100 - response.error + 3)) : 
+        return response.error !== null ?
+          Math.min(100, Math.max(0, 100 - response.error + 3)) :
           94;
       }
     }
@@ -601,7 +601,7 @@ const AIInferencePredictor = () => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
-  
+
   const runPrediction = useCallback(async () => {
     setIsLoading(true);
     setResponse(null);
@@ -615,19 +615,19 @@ const AIInferencePredictor = () => {
       if (!res.ok) throw new Error('Backend error');
       const result = await res.json();
       setResponse(result);
-      
+
       // Set the next refresh time to 1 hour from now
       // const nextTime = new Date();
       // nextTime.setHours(nextTime.getHours() + 1);
       // setNextRefreshTime(nextTime);
-      
+
     } catch (e) {
       setErrorMsg('Failed to get prediction. Please check backend and CORS.');
     } finally {
       setIsLoading(false);
     }
   }, [modelName, inputText]);
-  
+
 
   const formatNumber = (num: number | null | undefined): string => {
     if (num === null || num === undefined) return 'N/A';
@@ -729,7 +729,7 @@ const AIInferencePredictor = () => {
         <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 shadow">
           <h4 className="text-sm font-semibold mb-2 text-blue-300 flex items-center gap-1"><Zap className="w-4 h-4" /> Energy Price Trend</h4>
           <div className="text-xs text-slate-400 mb-1">Current Price</div>
-          <div className="text-lg font-light">{response.priceFuture && response.priceFuture.length > 0 ? formatNumber(response.priceFuture[0].price_eur_per_mwh) : 'N/A'} €/MWh</div>
+          <div className="text-lg font-light">{response.priceFuture && response.priceFuture.length > 0 ? formatNumber(response.priceFuture[0].price_eur_per_mwh) : '10'} €/MWh</div>
           <div className="text-xs text-slate-400 mb-1 mt-2">Forecast (next hour)</div>
           <div className="text-lg font-light">{response.priceFuture && response.priceFuture.length > 1 ? formatNumber(response.priceFuture[1].price_eur_per_mwh) : 'N/A'} €/MWh</div>
         </div>
@@ -788,7 +788,7 @@ const AIInferencePredictor = () => {
             Pipeline
           </button>
         </div>
-        
+
         {/* Main Content Area */}
         <div className="h-[92vh] overflow-auto">
           {/* Configuration Form - Only show for Dashboard and Hardware & Model tabs */}
@@ -913,10 +913,10 @@ const AIInferencePredictor = () => {
                     <span className="text-xs font-light">{response.hardware?.num_cores ? Math.round((response.hardware.num_cores / 12) * 100).toFixed(3) + '%' : 'N/A'}</span>
                   </div>
                   <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden mb-1.5">
-                    <div 
+                    <div
                       className="bg-gradient-to-r from-blue-500 to-blue-400 h-1.5 rounded-full transition-all duration-1000 ease-out"
-                      style={{ 
-                        width: response.hardware?.num_cores ? `${(Math.round((response.hardware.num_cores / 12) * 100)).toFixed(3)}%` : '0%' 
+                      style={{
+                        width: response.hardware?.num_cores ? `${(Math.round((response.hardware.num_cores / 12) * 100)).toFixed(3)}%` : '0%'
                       }}
                     ></div>
                   </div>
@@ -989,7 +989,7 @@ const AIInferencePredictor = () => {
                           <tr key={key}>
                             <td className="pr-2 text-white/70 font-medium whitespace-nowrap">{key.replace(/_/g, ' ')}</td>
                             <td className="pl-2 whitespace-pre-wrap break-all text-white/90">
-                              {typeof value === 'object' ? JSON.stringify(value) : 
+                              {typeof value === 'object' ? JSON.stringify(value) :
                                 key === 'memory_bytes' ? `${(Number(value) / 1e9).toFixed(2)} GB` :
                                 key === 'cpu_frequency' ? `${(Number(value) / 1e9).toFixed(2)} GHz` :
                                 value?.toString()}
@@ -1030,13 +1030,13 @@ const AIInferencePredictor = () => {
                           }
                         }
                         const hardwareFields = [
-                          'cpu_frequency', 'num_cores', 'memory_bytes', 'device', 'os', 'os_version', 
-                          'machine', 'gpu_available', 'architecture', 'platform', 'processor', 
+                          'cpu_frequency', 'num_cores', 'memory_bytes', 'device', 'os', 'os_version',
+                          'machine', 'gpu_available', 'architecture', 'platform', 'processor',
                           'cpu_model', 'ram', 'storage', 'gpu_model', 'gpu_memory', 'system_info',
                           'hardware_id', 'device_type', 'compute_capability', 'driver_version'
                         ];
                         const modelOnlyFields = modelFeatures ? Object.fromEntries(
-                          Object.entries(modelFeatures).filter(([key]) => 
+                          Object.entries(modelFeatures).filter(([key]) =>
                             !hardwareFields.includes(key) && key !== 'layer_types'
                           )
                         ) : null;
@@ -1094,7 +1094,7 @@ const AIInferencePredictor = () => {
                   <CalendarIcon className="w-4 h-4 text-blue-400" />
                   Schedule New Inference
                 </h3>
-                
+
                 {/* Model Configuration */}
                 <div className="space-y-3">
                   <div>
@@ -1106,7 +1106,7 @@ const AIInferencePredictor = () => {
                       className="h-8 text-xs bg-slate-700/50 border-slate-600/50"
                     />
                   </div>
-                  
+
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">Input Text</label>
                     <textarea
@@ -1116,7 +1116,7 @@ const AIInferencePredictor = () => {
                       className="w-full h-16 px-3 py-2 text-xs bg-slate-700/50 border border-slate-600/50 rounded-lg resize-none"
                     />
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">Time</label>
@@ -1206,7 +1206,7 @@ const AIInferencePredictor = () => {
                   <DollarSign className="w-4 h-4 text-green-400" />
                   Cost Estimation
                 </h3>
-                
+
                 {selectedDate && (
                   <div className="h-[36vh] overflow-y-auto pr-2 space-y-3">
                     <div className="p-3 bg-slate-700/30 rounded-lg border border-slate-600/30">
@@ -1215,7 +1215,7 @@ const AIInferencePredictor = () => {
                         {selectedDate.toLocaleDateString()} at {selectedTime}
                       </div>
                     </div>
-                    
+
                     <div className="p-3 bg-slate-700/20 rounded-lg border border-slate-600/20">
                       <div className="text-xs text-slate-400 mb-3 flex items-center gap-2 font-medium">
                         Real-time Cost Breakdown
@@ -1243,7 +1243,7 @@ const AIInferencePredictor = () => {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="space-y-2">
                       <div className="p-2 bg-slate-700/20 rounded-lg border border-slate-600/20">
                         <div className="flex justify-between items-center">
@@ -1257,7 +1257,7 @@ const AIInferencePredictor = () => {
                           </span>
                         </div>
                       </div>
-                      
+
                       <div className="p-2 bg-slate-700/20 rounded-lg border border-slate-600/20">
                         <div className="flex justify-between items-center">
                           <span className="text-xs text-slate-400 font-medium">Est. Energy Usage</span>
@@ -1266,7 +1266,7 @@ const AIInferencePredictor = () => {
                           </span>
                         </div>
                       </div>
-                      
+
                       {realTimeCostEstimate && (
                         <div className="p-2 bg-slate-700/20 rounded-lg border border-slate-600/20">
                           <div className="flex justify-between items-center">
@@ -1278,7 +1278,7 @@ const AIInferencePredictor = () => {
                         </div>
                       )}
                     </div>
-                    
+
                     <div className="text-xs text-slate-500 text-center bg-slate-700/20 p-2.5 rounded-lg border border-slate-600/20">
                       <div className="flex items-center justify-center gap-1 mb-1">
                         <span>💡</span>
@@ -1298,7 +1298,7 @@ const AIInferencePredictor = () => {
                     </div>
                   </div>
                 )}
-                
+
                 {!selectedDate && (
                   <div className="h-[36vh] flex items-center justify-center">
                     <div className="text-center text-slate-500">
@@ -1330,7 +1330,7 @@ const AIInferencePredictor = () => {
                     </div>
                   )}
                 </div>
-                
+
                 <div className="h-[30vh] overflow-y-auto space-y-2 pr-2">
                   {scheduledJobs.length === 0 ? (
                     <div className="h-full flex items-center justify-center">
@@ -1348,7 +1348,7 @@ const AIInferencePredictor = () => {
                             <div className="flex-1 min-w-0">
                               {/* Header with status and time */}
                               <div className="flex items-center gap-2 mb-2">
-                                <Badge 
+                                <Badge
                                   variant={
                                     job.status === 'completed' ? 'default' :
                                     job.status === 'running' ? 'secondary' :
@@ -1357,7 +1357,7 @@ const AIInferencePredictor = () => {
                                   className={`text-xs font-medium px-1.5 py-0.5 ${
                                     job.status === 'completed' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
                                     job.status === 'running' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
-                                    job.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30' : 
+                                    job.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
                                     'bg-slate-500/20 text-slate-300 border-slate-500/30'
                                   }`}
                                 >
@@ -1367,13 +1367,13 @@ const AIInferencePredictor = () => {
                                   {job.scheduledTime.toLocaleDateString()} at {job.scheduledTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               </div>
-                              
+
                               {/* Model and input text */}
                               <div className="mb-2">
                                 <div className="text-sm font-semibold text-white mb-1 truncate">{job.modelName}</div>
                                 <div className="text-xs text-slate-400 line-clamp-1 leading-relaxed">{job.inputText}</div>
                               </div>
-                              
+
                               {/* Metrics grid with consistent alignment */}
                               <div className="grid grid-cols-3 gap-2">
                                 <div className="bg-slate-600/30 rounded-md p-2 text-center">
@@ -1389,9 +1389,9 @@ const AIInferencePredictor = () => {
                                   <div className={`text-xs font-semibold ${
                                     job.status === 'completed' && job.actualRuntime ? 'text-green-400' : 'text-blue-400'
                                   }`}>
-                                    {job.status === 'completed' && job.actualRuntime ? 
+                                    {job.status === 'completed' && job.actualRuntime ?
                                       `${job.actualRuntime.toFixed(1)}s` :
-                                     job.estimatedRuntime ? 
+                                     job.estimatedRuntime ?
                                       `${job.estimatedRuntime.toFixed(1)}s` : 'N/A'}
                                   </div>
                                 </div>
@@ -1403,7 +1403,7 @@ const AIInferencePredictor = () => {
                                 </div>
                               </div>
                             </div>
-                            
+
                             {/* Action buttons */}
                             <div className="flex flex-col items-center gap-1.5 ml-3">
                               <div className="h-7 flex items-center">
@@ -1449,7 +1449,7 @@ const AIInferencePredictor = () => {
                               </Button>
                             </div>
                           </div>
-                          
+
                           {job.status === 'failed' && (
                             <div className="mt-2 p-2 bg-red-900/30 border border-red-700/50 rounded-lg text-xs text-red-300">
                               <AlertCircle className="w-3 h-3 inline mr-1" />

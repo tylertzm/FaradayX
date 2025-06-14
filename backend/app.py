@@ -10,6 +10,7 @@ import sys
 import pandas as pd
 from extract_model_features import extract_model_features
 from extract_hardware_features import extract_hardware_features
+from transformers import AutoTokenizer
 
 # Set the TOKENIZERS_PARALLELISM environment variable to prevent warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -43,14 +44,26 @@ def main():
         import torch
         model = AutoModelForCausalLM.from_pretrained(model_name)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        # Ensure tokenizer has distinct pad token
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.pad_token_id = tokenizer.eos_token_id
+
         input_text = input("Enter example input text (or leave blank for default): ").strip() or "Hello, this is a test."
-        # Add padding and attention mask
-        inputs = tokenizer(input_text, return_tensors="pt", padding=True, add_special_tokens=True)
-        # Ensure attention mask is set
-        if "attention_mask" not in inputs:
-            inputs["attention_mask"] = torch.ones_like(inputs["input_ids"])
+
+        # Properly tokenize with attention mask
+        inputs = tokenizer(
+            input_text,
+            padding=True,
+            return_tensors="pt",
+            truncation=True,
+            return_attention_mask=True
+        )
+
+        # Pass both input_ids and attention_mask to the model
         example_input = inputs["input_ids"]
-        model_features = extract_model_features(model, example_input)
+        model_features = extract_model_features(model, example_input, attention_mask=inputs["attention_mask"])
     except Exception as e:
         print(f"[ERROR] Could not load model: {e}")
         return
@@ -146,7 +159,7 @@ def main():
     import time
     with torch.no_grad():
         start = time.time()
-        _ = model(example_input)
+        _ = model(example_input, attention_mask=inputs["attention_mask"])
         end = time.time()
     actual_runtime = end - start
     print(f"Actual measured runtime (seconds): {actual_runtime:.4f}")

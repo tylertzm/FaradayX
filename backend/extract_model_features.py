@@ -7,10 +7,16 @@ try:
 except ImportError:
     profile = None
 
-def extract_model_features(model, example_input):
+def extract_model_features(model, example_input, attention_mask=None):
     if profile is None:
         raise ImportError("Please install thop: pip install thop")
-    macs, params = profile(model, inputs=(example_input,))
+
+    # Pass attention mask to profile if available
+    if attention_mask is not None:
+        macs, params = profile(model, inputs=(example_input, attention_mask))
+    else:
+        macs, params = profile(model, inputs=(example_input,))
+
     # Count layers and types
     layer_types = {}
     num_layers = 0
@@ -20,13 +26,18 @@ def extract_model_features(model, example_input):
         t = type(m).__name__
         layer_types[t] = layer_types.get(t, 0) + 1
         num_layers += 1
+
     # Try to get output shape
     try:
         with torch.no_grad():
-            output = model(example_input)
+            if attention_mask is not None:
+                output = model(example_input, attention_mask=attention_mask)
+            else:
+                output = model(example_input)
         output_shape = list(output.shape)
     except Exception:
         output_shape = None
+
     features = {
         "num_params": int(params),
         "flops": int(macs),
@@ -58,9 +69,9 @@ if __name__ == "__main__":
         try:
             model = AutoModelForCausalLM.from_pretrained(model_name)
             tokenizer = AutoTokenizer.from_pretrained(model_name)
-            inputs = tokenizer(input_text, return_tensors="pt")
+            inputs = tokenizer(input_text, return_tensors="pt", padding=True, truncation=True)
             example_input = inputs["input_ids"]
-            features = extract_model_features(model, example_input)
+            features = extract_model_features(model, example_input, attention_mask=inputs["attention_mask"])
             # Add extra fields for frontend compatibility
             features["model"] = model_name
             features["model_architecture"] = type(model).__name__
@@ -71,7 +82,7 @@ if __name__ == "__main__":
             features["tokens"] = features["sequence_length"]
             features["input_token_length"] = features["sequence_length"]  # should be an int
             try:
-                output_ids = model.generate(example_input)
+                output_ids = model.generate(example_input, attention_mask=inputs["attention_mask"])
                 output_token_length = output_ids.shape[1] if len(output_ids.shape) > 1 else 0
             except Exception:
                 output_token_length = 0
