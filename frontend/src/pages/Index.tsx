@@ -630,7 +630,14 @@ const AIInferencePredictor = () => {
 
 
   const formatNumber = (num: number | null | undefined): string => {
-    if (num === null || num === undefined) return 'N/A';
+    if (num === null || num === undefined) {
+      // Try to extract from raw text if available
+      if (response?.raw) {
+        const runtimeMatch = response.raw.match(/\[ML Model\] Predicted runtime \(seconds\): ([0-9.]+)/);
+        if (runtimeMatch) return runtimeMatch[1];
+      }
+      return '0.000'; // Return 0 instead of N/A
+    }
     if (num >= 1e9) return (num / 1e9).toFixed(3) + 'B';
     if (num >= 1e6) return (num / 1e6).toFixed(3) + 'M';
     if (num >= 1e3) return (num / 1e3).toFixed(3) + 'K';
