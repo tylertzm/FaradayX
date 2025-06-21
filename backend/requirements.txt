@@ -12,6 +12,7 @@ tokenizers>=0.13.0
 # Web framework
 flask>=2.3.0
 flask-cors>=4.0.0
+gunicorn>=21.2.0
 
 # System and utilities
 psutil>=5.9.0
