@@ -1,6 +1,8 @@
+const API_URL = "https://faradayx.onrender.com";
+
 export const runPrediction = async () => {
   try {
-    const res = await fetch('/site_integration/template_list', {
+    const res = await fetch(`${API_URL}/site_integration/template_list`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });

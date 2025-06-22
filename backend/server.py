@@ -17,7 +17,7 @@ from api_pipeline_info import api_pipeline_info
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"], expose_headers=["Content-Type"], methods=["GET", "POST", "OPTIONS", "DELETE", "PUT"])
+CORS(app, origins=["https://your-site.netlify.app"], supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"], expose_headers=["Content-Type"], methods=["GET", "POST", "OPTIONS", "DELETE", "PUT"])
 app.register_blueprint(api_pipeline_info)
 
 # Initialize SQLite database for scheduled jobs

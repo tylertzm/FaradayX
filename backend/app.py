@@ -11,6 +11,8 @@ import pandas as pd
 from extract_model_features import extract_model_features
 from extract_hardware_features import extract_hardware_features
 from transformers import AutoTokenizer
+from flask import Flask
+from flask_cors import CORS
 
 # Set the TOKENIZERS_PARALLELISM environment variable to prevent warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -34,6 +36,11 @@ def heuristic_predict(features):
         return flops / (cpu_freq * num_cores) * ineff
     except Exception:
         return None
+
+app = Flask(__name__)
+
+# Replace with your actual Netlify site URL after deployment
+CORS(app, origins=["https://your-site.netlify.app"])
 
 def main():
     print("=== AI Inference Runtime & Power Predictor ===")
