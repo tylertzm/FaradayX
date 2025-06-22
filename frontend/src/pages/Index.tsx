@@ -15,6 +15,9 @@ import SchedulerForm from '../components/SchedulerForm';
 import SchedulerCalendar from '../components/SchedulerCalendar';
 import CostEstimation from '../components/CostEstimation';
 
+// Add at the top, after imports
+const API_URL = import.meta.env.VITE_API_URL || 'https://faradayx.onrender.com';
+
 interface HardwareInfo {
   cpu_frequency: number;
   device: string;
@@ -143,7 +146,7 @@ const AIInferencePredictor = () => {
   const getEnergyPriceForTime = useCallback(async (scheduledTime: Date): Promise<number> => {
     try {
       const timestamp = scheduledTime.getTime();
-      const response = await fetch(`http://localhost:5001/api/scheduler/energy-price/${timestamp}`);
+      const response = await fetch(`${API_URL}/api/scheduler/energy-price/${timestamp}`);
       if (response.ok) {
         const data = await response.json();
         return data.price || 85.2; // Use consistent fallback
@@ -161,7 +164,7 @@ const AIInferencePredictor = () => {
     try {
       setIsLoadingPrice(true);
       const timestamp = Date.now();
-      const response = await fetch(`http://localhost:5001/api/scheduler/energy-price/${timestamp}`);
+      const response = await fetch(`${API_URL}/api/scheduler/energy-price/${timestamp}`);
       if (response.ok) {
         const data = await response.json();
         const price = data.price || 85.2;
@@ -184,7 +187,7 @@ const AIInferencePredictor = () => {
     try {
       setIsLoadingPrice(true);
       // Use the current scheduler model/input for prediction
-      const predictRes = await fetch('http://localhost:5001/api/predict', {
+      const predictRes = await fetch(`${API_URL}/api/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -267,7 +270,7 @@ const AIInferencePredictor = () => {
 
   const loadScheduledJobs = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/scheduler/jobs');
+      const response = await fetch(`${API_URL}/api/scheduler/jobs`);
       if (response.ok) {
         const jobs = await response.json();
         const formattedJobs = jobs.map((job: ScheduledJob) => ({
@@ -322,7 +325,7 @@ const AIInferencePredictor = () => {
   }> => {
     try {
       // Call backend /api/predict for model, input, and (optionally) scheduled time
-      const predictRes = await fetch('http://localhost:5001/api/predict', {
+      const predictRes = await fetch(`${API_URL}/api/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -395,7 +398,7 @@ const AIInferencePredictor = () => {
       const estimates = await estimateJobCost(scheduleModelName, scheduleInputText, scheduledTime);
 
       // Send to backend
-      const backendResponse = await fetch('http://localhost:5001/api/scheduler/jobs', {
+      const backendResponse = await fetch(`${API_URL}/api/scheduler/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -442,7 +445,7 @@ const AIInferencePredictor = () => {
 
   const deleteJob = async (jobId: string) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/scheduler/jobs/${jobId}`, {
+      const response = await fetch(`${API_URL}/api/scheduler/jobs/${jobId}`, {
         method: 'DELETE'
       });
 
@@ -466,7 +469,7 @@ const AIInferencePredictor = () => {
     ));
 
     try {
-      const response = await fetch(`http://localhost:5001/api/scheduler/jobs/${job.id}/run`, {
+      const response = await fetch(`${API_URL}/api/scheduler/jobs/${job.id}/run`, {
         method: 'POST'
       });
 
@@ -607,7 +610,7 @@ const AIInferencePredictor = () => {
     setResponse(null);
     setErrorMsg('');
     try {
-      const res = await fetch('http://localhost:5001/api/predict', {
+      const res = await fetch(`${API_URL}/api/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelName, inputText }),
